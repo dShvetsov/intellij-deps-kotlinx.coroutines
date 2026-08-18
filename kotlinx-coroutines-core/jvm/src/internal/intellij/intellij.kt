@@ -8,6 +8,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.InternalCoroutinesApi
 import kotlin.coroutines.*
 import kotlinx.coroutines.internal.softLimitedParallelism as softLimitedParallelismImpl
+import kotlinx.coroutines.internal.tryAdjustParallelism as tryAdjustParallelismImpl
 import kotlinx.coroutines.internal.SoftLimitedDispatcher
 import kotlinx.coroutines.runBlockingWithParallelismCompensation as runBlockingWithParallelismCompensationImpl
 import kotlinx.coroutines.Dispatchers
@@ -62,6 +63,23 @@ public object IntellijCoroutines {
     @Deprecated("use named version", level = DeprecationLevel.HIDDEN)
     public fun CoroutineDispatcher.softLimitedParallelism(parallelism: Int): CoroutineDispatcher =
         softLimitedParallelismImpl(parallelism, null)
+
+    /**
+     * Adjusts the parallelism of [this] dispatcher by [parallelismDelta].
+     *
+     * This extension can only be used on instances of [Dispatchers.Default], [Dispatchers.IO] and also on what
+     * [softLimitedParallelism] has returned.  The parallelism can not be decreased below the initial value.
+     * The method does the best effort to adjust parallelism, the actual applied value can be less (or 0) than
+     * requested. Throws [UnsupportedOperationException] if [this] does not support the parallelism adjustment
+     * mechanism.
+     *
+     * @param parallelismDelta a positive or negative adjustment to the parallelism limit;
+     *        a negative value reclaims previously granted parallelism.
+     * @return the actual adjustment that was made.
+     */
+    public fun CoroutineDispatcher.tryAdjustParallelism(parallelismDelta: Int): Int {
+        return tryAdjustParallelismImpl(parallelismDelta)
+    }
 
     /**
      * Executes [action] and **advises** to compensate parallelism if [action] does not finish within [timeout].
