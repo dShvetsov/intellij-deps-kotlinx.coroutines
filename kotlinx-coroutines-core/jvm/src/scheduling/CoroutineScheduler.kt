@@ -630,6 +630,7 @@ internal class CoroutineScheduler(
         } else {
             outstandingCpuCompensations.incrementAndGet()
             releaseCpuPermit()
+            incrementBlockingTasks() // Fake blocking tasks to hack cpuWorkers
         }
         signalCpuWork()
     }
@@ -655,6 +656,7 @@ internal class CoroutineScheduler(
             if (!tryAcquireCpuPermit()) {
                 cpuDecompensationRequests.incrementAndGet()
             }
+            decrementBlockingTasks()
         }
     }
 

@@ -177,6 +177,11 @@ internal open class SchedulerCoroutineDispatcher(
     }
 
     override fun adjustParallelism(parallelism: Int) {
-        TODO("Not yet implemented")
+        if (parallelism > 0) {
+            repeat(parallelism) { coroutineScheduler.increaseCpuParallelism() }
+        }
+        if (parallelism < 0) {
+            repeat(-parallelism) { coroutineScheduler.decreaseCpuParallelism() }
+        }
     }
 }

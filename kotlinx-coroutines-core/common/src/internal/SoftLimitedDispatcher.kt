@@ -30,7 +30,7 @@ internal fun CoroutineDispatcher.softLimitedParallelism(parallelism: Int, name: 
 
 internal fun CoroutineDispatcher.adjustParallelism(parallelism: Int) {
     if (this is SoftLimitedParallelism) {
-        this.adjustParallelism(parallelism)
+        return this.adjustParallelism(parallelism)
     }
     throw UnsupportedOperationException("CoroutineDispatcher.increaseParallelism cannot be applied to $this")
 }
@@ -74,10 +74,17 @@ internal class SoftLimitedDispatcher(
     }
 
     override fun adjustParallelism(parallelism: Int) {
-        if (totalParallelism + parallelism >= (hardParallelism ?: Int.MAX_VALUE)) {
+        if (totalParallelism + parallelism !in 1..(hardParallelism ?: Int.MAX_VALUE)) {
             return
         }
-        (dispatcher as? SoftLimitedDispatcher ?: return).adjustParallelism(parallelism)
+        synchronized(workerAllocationLock) {
+            if (totalParallelism + parallelism !in 1..(hardParallelism ?: Int.MAX_VALUE)) {
+                return // in case parallelism was adjusted by another thread
+            }
+            val permits = availablePermits.value
+            availablePermits.compareAndSet(permits, permits + parallelism)
+
+        }
     }
 
     override fun dispatch(context: CoroutineContext, block: Runnable) {
