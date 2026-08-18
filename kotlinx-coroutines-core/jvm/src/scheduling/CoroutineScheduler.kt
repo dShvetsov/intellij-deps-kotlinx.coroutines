@@ -296,6 +296,15 @@ internal class CoroutineScheduler(
      */
     private val cpuDecompensationRequests = atomic(0)
 
+    /**
+     * Number of CPU permits added by genuine (not cancelled-out) [increaseCpuParallelism] calls that have not
+     * yet been reclaimed by a matching [decreaseCpuParallelism] call. Acts as a floor: [decreaseCpuParallelism]
+     * may only register a real give-back request if it can claim one unit of this counter. This guarantees
+     * [availableCpuPermits] can never be decompensated below [corePoolSize] by a [decreaseCpuParallelism] call
+     * that has no matching prior [increaseCpuParallelism].
+     */
+    private val outstandingCpuCompensations = atomic(0)
+
     private val createdWorkers: Int inline get() = (controlState.value and CREATED_MASK).toInt()
     private val availableCpuPermits: Int inline get() = availableCpuPermits(controlState.value)
 
@@ -328,6 +337,11 @@ internal class CoroutineScheduler(
         if (requests == 0) return false
         assert { requests > 0 }
         return cpuDecompensationRequests.compareAndSet(requests, requests - 1)
+    }
+
+    private inline fun tryDecrementOutstandingCpuCompensations(): Boolean = outstandingCpuCompensations.loop { outstanding ->
+        if (outstanding == 0) return false
+        if (outstandingCpuCompensations.compareAndSet(outstanding, outstanding - 1)) return true
     }
 
     // This is used a "stop signal" for close and shutdown functions
@@ -368,6 +382,11 @@ internal class CoroutineScheduler(
     fun shutdown(timeout: Long) {
         // atomically set termination flag which is checked when workers are added or removed
         if (!_isTerminated.compareAndSet(false, true)) return
+
+        while (outstandingCpuCompensations.value > 0) {
+            decreaseCpuParallelism()
+        }
+
         // make sure we are not waiting for the current thread
         val currentWorker = currentWorker()
         // Capture # of created workers that cannot change anymore (mind the synchronized block!)
@@ -602,6 +621,41 @@ internal class CoroutineScheduler(
             "blocking tasks = ${blockingTasks(state)}, " +
             "CPUs acquired = ${corePoolSize - availableCpuPermits(state)}" +
             "}]"
+    }
+
+    fun increaseCpuParallelism() {
+        if (isTerminated) return
+        if (tryDecrementDecompensationRequests()) {
+            // instead of increasing the parallelism limit, we removed a request to decrease it
+        } else {
+            outstandingCpuCompensations.incrementAndGet()
+            releaseCpuPermit()
+        }
+        signalCpuWork()
+    }
+
+    /**
+     * Requests that one previously-added CPU permit (from a matching [increaseCpuParallelism] call) be given
+     * back to the pool the next time some CPU-permit-holding worker reaches a safe point
+     * (see [Worker.tryDecompensateCpu]).
+     *
+     * Floor invariant: this only has an effect if [outstandingCpuCompensations] has a spare unit, i.e. there was
+     * a genuine, not-yet-reclaimed prior [increaseCpuParallelism] call. Without this check, an unpaired call
+     * here could eventually drain [availableCpuPermits] below [corePoolSize], permanently starving the pool.
+     * If there is no such unit, this call is a safe no-op.
+     *
+     * Known, accepted conservatism: if [increaseCpuParallelism]'s cancel-a-pending-decrease branch fires for a
+     * decrease request *after* this method already consumed a unit of [outstandingCpuCompensations] for that
+     * same request, [outstandingCpuCompensations] can end up slightly under-counting real headroom (a future
+     * legitimate decrease may be refused even though it would have been safe) — this is intentionally accepted
+     * as a safety-over-liveness tradeoff, not something to engineer around.
+     */
+    fun decreaseCpuParallelism() {
+        if (tryDecrementOutstandingCpuCompensations()) {
+            if (!tryAcquireCpuPermit()) {
+                cpuDecompensationRequests.incrementAndGet()
+            }
+        }
     }
 
     /** see [Worker.runTaskSafely] */
@@ -1092,12 +1146,7 @@ internal class CoroutineScheduler(
                 // increasing the number of blocking tasks and the available cpu permits. The increase in the number
                 // of blocking tasks will make the scheduler treat the current worker as a non-CPU one.
                 incrementBlockingTasks()
-                if (tryDecrementDecompensationRequests()) {
-                    // instead of increasing the parallelism limit, we removed a request to decrease it
-                } else {
-                    releaseCpuPermit()
-                }
-                signalCpuWork()
+                increaseCpuParallelism()
             }
             val taskParallelismCompensation = (currentTask as? TaskImpl)?.block as? ParallelismCompensation
             taskParallelismCompensation?.increaseParallelismAndLimit()

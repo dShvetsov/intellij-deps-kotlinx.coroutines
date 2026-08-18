@@ -36,4 +36,8 @@ internal class NamedSoftParallelismDispatcher<D>(
         parallelism.checkParallelism()
         return SoftLimitedDispatcher(this, parallelism, name)
     }
+
+    override fun adjustParallelism(parallelism: Int) {
+        return dispatcher.adjustParallelism(parallelism)
+    }
 }

@@ -14,6 +14,7 @@ import kotlin.coroutines.*
  */
 internal interface SoftLimitedParallelism {
     fun softLimitedParallelism(parallelism: Int, name: String?): CoroutineDispatcher
+    fun adjustParallelism(parallelism: Int)
 }
 
 /**
@@ -25,6 +26,13 @@ internal fun CoroutineDispatcher.softLimitedParallelism(parallelism: Int, name: 
     }
     // SoftLimitedDispatcher cannot be used on top of LimitedDispatcher, because the latter doesn't propagate compensation requests
     throw UnsupportedOperationException("CoroutineDispatcher.softLimitedParallelism cannot be applied to $this")
+}
+
+internal fun CoroutineDispatcher.adjustParallelism(parallelism: Int) {
+    if (this is SoftLimitedParallelism) {
+        this.adjustParallelism(parallelism)
+    }
+    throw UnsupportedOperationException("CoroutineDispatcher.increaseParallelism cannot be applied to $this")
 }
 
 /**
@@ -39,15 +47,21 @@ internal fun CoroutineDispatcher.softLimitedParallelism(parallelism: Int, name: 
 internal class SoftLimitedDispatcher(
     private val dispatcher: CoroutineDispatcher,
     parallelism: Int,
-    private val name: String?
+    private val name: String?,
+    private val hardParallelism: Int? = null
 ) : CoroutineDispatcher(), Delay by (dispatcher as? Delay ?: DefaultDelay), SoftLimitedParallelism {
     private val initialParallelism = parallelism
+    private val additionalSoftParallelism = 0
     // `parallelism limit - runningWorkers`; may be < 0 if decompensation is expected
     private val availablePermits = atomic(parallelism)
 
     private val queue = LockFreeTaskQueue<Runnable>(singleConsumer = false)
 
     private val workerAllocationLock = SynchronizedObject()
+
+    // totalParallelism doesn't detect if parallelism was compensated for a specific thread
+    private val totalParallelism
+        get() = initialParallelism + additionalSoftParallelism
 
     override fun limitedParallelism(parallelism: Int, name: String?): CoroutineDispatcher {
         return super.limitedParallelism(parallelism, name)
@@ -57,6 +71,13 @@ internal class SoftLimitedDispatcher(
         parallelism.checkParallelism()
         if (parallelism >= initialParallelism) return namedOrThis(name)
         return SoftLimitedDispatcher(this, parallelism, name)
+    }
+
+    override fun adjustParallelism(parallelism: Int) {
+        if (totalParallelism + parallelism >= (hardParallelism ?: Int.MAX_VALUE)) {
+            return
+        }
+        (dispatcher as? SoftLimitedDispatcher ?: return).adjustParallelism(parallelism)
     }
 
     override fun dispatch(context: CoroutineContext, block: Runnable) {

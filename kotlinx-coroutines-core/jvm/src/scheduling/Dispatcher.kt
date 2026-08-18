@@ -30,6 +30,7 @@ internal object DefaultScheduler : SchedulerCoroutineDispatcher(
     }
 
     override fun toString(): String = "Dispatchers.Default"
+
 }
 
 // The unlimited instance of Dispatchers.IO that utilizes all the threads CoroutineScheduler provides
@@ -61,6 +62,10 @@ private object UnlimitedIoScheduler : CoroutineDispatcher(), SoftLimitedParallel
         parallelism.checkParallelism()
         if (parallelism >= MAX_POOL_SIZE) return namedOrThis(name)
         return SoftLimitedDispatcher(this, parallelism, name)
+    }
+
+    override fun adjustParallelism(parallelism: Int) {
+        // Do nothing, because it is unlimited
     }
 }
 
@@ -103,6 +108,10 @@ internal object DefaultIoScheduler : ExecutorCoroutineDispatcher(), Executor, So
     }
 
     override fun toString(): String = "Dispatchers.IO"
+
+    override fun adjustParallelism(parallelism: Int) {
+        default.adjustParallelism(parallelism)
+    }
 }
 
 // Instantiated in tests so we can test it in isolation
@@ -165,5 +174,9 @@ internal open class SchedulerCoroutineDispatcher(
         parallelism.checkParallelism()
         if (parallelism >= corePoolSize) return namedOrThis(name)
         return SoftLimitedDispatcher(this, parallelism, name)
+    }
+
+    override fun adjustParallelism(parallelism: Int) {
+        TODO("Not yet implemented")
     }
 }

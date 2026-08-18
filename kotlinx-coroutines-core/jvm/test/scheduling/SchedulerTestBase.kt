@@ -139,5 +139,9 @@ internal fun SchedulerCoroutineDispatcher.softBlocking(parallelism: Int = 16): C
         override fun softLimitedParallelism(parallelism: Int, name: String?): CoroutineDispatcher {
             return this@softBlocking.softLimitedParallelism(parallelism, name)
         }
+
+        override fun adjustParallelism(parallelism: Int) {
+            return this@softBlocking.adjustParallelism(parallelism)
+        }
     }.softLimitedParallelism(parallelism, null)
 }
