@@ -30,7 +30,6 @@ internal object DefaultScheduler : SchedulerCoroutineDispatcher(
     }
 
     override fun toString(): String = "Dispatchers.Default"
-
 }
 
 // The unlimited instance of Dispatchers.IO that utilizes all the threads CoroutineScheduler provides

@@ -623,6 +623,11 @@ internal class CoroutineScheduler(
             "}]"
     }
 
+    /**
+     * Increase the amount of allowed CPU threads.
+     *
+     * Part of IntelliJ-patch.
+     */
     fun increaseCpuParallelism() {
         if (isTerminated) return
         if (tryDecrementDecompensationRequests()) {
@@ -636,20 +641,11 @@ internal class CoroutineScheduler(
     }
 
     /**
-     * Requests that one previously-added CPU permit (from a matching [increaseCpuParallelism] call) be given
-     * back to the pool the next time some CPU-permit-holding worker reaches a safe point
-     * (see [Worker.tryDecompensateCpu]).
+     * Decrease the amount of allowed CPU threads.
+     * Can not decrease the amount below than initial [corePoolSize], in this case
+     * the function does nothing.
      *
-     * Floor invariant: this only has an effect if [outstandingCpuCompensations] has a spare unit, i.e. there was
-     * a genuine, not-yet-reclaimed prior [increaseCpuParallelism] call. Without this check, an unpaired call
-     * here could eventually drain [availableCpuPermits] below [corePoolSize], permanently starving the pool.
-     * If there is no such unit, this call is a safe no-op.
-     *
-     * Known, accepted conservatism: if [increaseCpuParallelism]'s cancel-a-pending-decrease branch fires for a
-     * decrease request *after* this method already consumed a unit of [outstandingCpuCompensations] for that
-     * same request, [outstandingCpuCompensations] can end up slightly under-counting real headroom (a future
-     * legitimate decrease may be refused even though it would have been safe) — this is intentionally accepted
-     * as a safety-over-liveness tradeoff, not something to engineer around.
+     * This function is a part of IntelliJ-patch
      */
     fun decreaseCpuParallelism() {
         if (tryDecrementOutstandingCpuCompensations()) {
