@@ -180,12 +180,12 @@ internal open class SchedulerCoroutineDispatcher(
         fun Boolean.toInt() = if (this) 1 else 0
 
         if (parallelismDelta > 0) {
-            return (0..parallelismDelta).sumOf {
+            return (1..parallelismDelta).sumOf {
                 coroutineScheduler.tryIncrementCpuParallelism().toInt()
             }
         }
         if (parallelismDelta < 0) {
-            val successfulAdjustments = (0..-parallelismDelta).sumOf {
+            val successfulAdjustments = (1..-parallelismDelta).sumOf {
                 coroutineScheduler.tryDecreaseCpuParallelism().toInt()
             }
             return -successfulAdjustments
