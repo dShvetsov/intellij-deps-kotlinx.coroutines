@@ -14,7 +14,16 @@ import kotlin.coroutines.*
  */
 internal interface SoftLimitedParallelism {
     fun softLimitedParallelism(parallelism: Int, name: String?): CoroutineDispatcher
-    fun adjustParallelism(parallelism: Int)
+
+    /**
+     * Makes an attempt to adjust the parallelism limit by [parallelismDelta].
+     *
+     * [parallelismDelta] may be positive or negative value. It is recommended to use +1 and -1.
+     * It is not guaranteed that new parallelism limit will be equal to `oldParallelism + parallelismDelta`:
+     * it is possible that adjustment will be done only partially or ignored at all. The function
+     * returns the true adjustment that was done.
+     */
+    fun tryAdjustParallelism(parallelismDelta: Int): Int
 }
 
 /**
@@ -28,9 +37,9 @@ internal fun CoroutineDispatcher.softLimitedParallelism(parallelism: Int, name: 
     throw UnsupportedOperationException("CoroutineDispatcher.softLimitedParallelism cannot be applied to $this")
 }
 
-internal fun CoroutineDispatcher.adjustParallelism(parallelism: Int) {
+internal fun CoroutineDispatcher.tryAdjustParallelism(parallelism: Int): Int {
     if (this is SoftLimitedParallelism) {
-        return this.adjustParallelism(parallelism)
+        return this.tryAdjustParallelism(parallelism)
     }
     throw UnsupportedOperationException("CoroutineDispatcher.increaseParallelism cannot be applied to $this")
 }
@@ -73,17 +82,21 @@ internal class SoftLimitedDispatcher(
         return SoftLimitedDispatcher(this, parallelism, name)
     }
 
-    override fun adjustParallelism(parallelism: Int) {
-        if (totalParallelism + parallelism !in 1..(hardParallelism ?: Int.MAX_VALUE)) {
-            return
+    override fun tryAdjustParallelism(parallelismDelta: Int): Int {
+        if (totalParallelism + parallelismDelta !in 1..(hardParallelism ?: Int.MAX_VALUE)) {
+            return 0
         }
         synchronized(workerAllocationLock) {
-            if (totalParallelism + parallelism !in 1..(hardParallelism ?: Int.MAX_VALUE)) {
-                return // in case parallelism was adjusted by another thread
+            if (totalParallelism + parallelismDelta !in 1..(hardParallelism ?: Int.MAX_VALUE)) {
+                return 0 // in case parallelism was adjusted by another thread
             }
             val permits = availablePermits.value
-            availablePermits.compareAndSet(permits, permits + parallelism)
-
+            val success = availablePermits.compareAndSet(permits, permits + parallelismDelta)
+            if (success) {
+                return parallelismDelta
+            } else {
+                return 0
+            }
         }
     }
 

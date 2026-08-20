@@ -31,7 +31,7 @@ class DispatcherParallelismAdjustmentTest : SchedulerTestBase() {
         // All corePoolSize permits are held by the busy tasks above (which are still blocked on
         // release), so this extra task can only start if adjustParallelism(1) genuinely grants a
         // new permit.
-        dispatcher.adjustParallelism(1)
+        dispatcher.tryAdjustParallelism(1)
         val extraStarted = CountDownLatch(1)
         dispatcher.dispatch(EmptyCoroutineContext, Runnable { extraStarted.countDown() })
         assertTrue(
@@ -39,7 +39,7 @@ class DispatcherParallelismAdjustmentTest : SchedulerTestBase() {
             "adjustParallelism(1) should let one extra task run concurrently with the corePoolSize busy ones"
         )
 
-        dispatcher.adjustParallelism(-1)
+        dispatcher.tryAdjustParallelism(-1)
         release.countDown()
     }
 
@@ -48,7 +48,7 @@ class DispatcherParallelismAdjustmentTest : SchedulerTestBase() {
         corePoolSize = 2
         // No matching adjustParallelism(1) beforehand -> zero legitimate headroom, so this must not
         // shrink the pool below corePoolSize.
-        dispatcher.adjustParallelism(-1)
+        dispatcher.tryAdjustParallelism(-1)
 
         val started = CountDownLatch(corePoolSize)
         val release = CountDownLatch(1)
@@ -80,7 +80,7 @@ class DispatcherParallelismAdjustmentTest : SchedulerTestBase() {
         }
         assertTrue(started.await(10, TimeUnit.SECONDS))
 
-        soft.adjustParallelism(1)
+        soft.tryAdjustParallelism(1)
         val extraStarted = CountDownLatch(1)
         soft.dispatch(EmptyCoroutineContext, Runnable { extraStarted.countDown() })
         assertTrue(
@@ -88,7 +88,7 @@ class DispatcherParallelismAdjustmentTest : SchedulerTestBase() {
             "adjustParallelism(1) should let one extra task run concurrently on the soft-limited view"
         )
 
-        soft.adjustParallelism(-1)
+        soft.tryAdjustParallelism(-1)
         release.countDown()
     }
 
@@ -97,7 +97,7 @@ class DispatcherParallelismAdjustmentTest : SchedulerTestBase() {
         val parallelism = 2
         val soft = softBlockingDispatcher(parallelism)
 
-        soft.adjustParallelism(-1)
+        soft.tryAdjustParallelism(-1)
 
         val started = CountDownLatch(parallelism)
         val release = CountDownLatch(1)

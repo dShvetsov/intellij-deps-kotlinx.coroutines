@@ -297,11 +297,9 @@ internal class CoroutineScheduler(
     private val cpuDecompensationRequests = atomic(0)
 
     /**
-     * Number of CPU permits added by genuine (not cancelled-out) [increaseCpuParallelism] calls that have not
-     * yet been reclaimed by a matching [decreaseCpuParallelism] call. Acts as a floor: [decreaseCpuParallelism]
-     * may only register a real give-back request if it can claim one unit of this counter. This guarantees
-     * [availableCpuPermits] can never be decompensated below [corePoolSize] by a [decreaseCpuParallelism] call
-     * that has no matching prior [increaseCpuParallelism].
+     * Number of CPU permits added by [tryIncrementCpuParallelism] calls that have not
+     * yet been reclaimed by a matching [tryDecreaseCpuParallelism] call. Acts as a safe-mechanism that guarantees
+     * that [outstandingCpuCompensations] is in the 0..[MAX_OUTSTANDING_CPU_COMPENSATIONS] range.
      */
     private val outstandingCpuCompensations = atomic(0)
 
@@ -339,6 +337,11 @@ internal class CoroutineScheduler(
         return cpuDecompensationRequests.compareAndSet(requests, requests - 1)
     }
 
+    private fun tryIncrementOutstandingCpuCompensations(): Boolean = outstandingCpuCompensations.loop { outstanding ->
+        if (outstanding > MAX_OUTSTANDING_CPU_COMPENSATIONS) return false
+        if (outstandingCpuCompensations.compareAndSet(outstanding, outstanding + 1)) return true
+    }
+
     private inline fun tryDecrementOutstandingCpuCompensations(): Boolean = outstandingCpuCompensations.loop { outstanding ->
         if (outstanding == 0) return false
         if (outstandingCpuCompensations.compareAndSet(outstanding, outstanding - 1)) return true
@@ -367,7 +370,7 @@ internal class CoroutineScheduler(
 
         internal const val MIN_SUPPORTED_POOL_SIZE = 1 // we support 1 for test purposes, but it is not usually used
         internal const val MAX_SUPPORTED_POOL_SIZE = (1 shl BLOCKING_SHIFT) - 2
-
+        internal const val MAX_OUTSTANDING_CPU_COMPENSATIONS = 1024
         // Masks of parkedWorkersStack
         private const val PARKED_INDEX_MASK = CREATED_MASK
         private const val PARKED_VERSION_MASK = CREATED_MASK.inv()
@@ -384,7 +387,7 @@ internal class CoroutineScheduler(
         if (!_isTerminated.compareAndSet(false, true)) return
 
         while (outstandingCpuCompensations.value > 0) {
-            decreaseCpuParallelism()
+            tryDecreaseCpuParallelism()
         }
 
         // make sure we are not waiting for the current thread
@@ -626,34 +629,53 @@ internal class CoroutineScheduler(
     /**
      * Increase the amount of allowed CPU threads.
      *
-     * Part of IntelliJ-patch.
+     * The amount of compensated threads can not be exceed [MAX_OUTSTANDING_CPU_COMPENSATIONS]
+     *
+     * Mechanism of cpu compensation is a part of IntelliJ-patch, and has not been tested for
+     * all corner cases such as [corePoolSize] = [MAX_SUPPORTED_POOL_SIZE], where integer overflow
+     * is possible
      */
-    fun increaseCpuParallelism() {
-        if (isTerminated) return
+    fun tryIncrementCpuParallelism(): Boolean {
+        if (isTerminated) return false
         if (tryDecrementDecompensationRequests()) {
             // instead of increasing the parallelism limit, we removed a request to decrease it
         } else {
-            outstandingCpuCompensations.incrementAndGet()
+            if (!tryIncrementOutstandingCpuCompensations()) {
+                return false
+            }
             releaseCpuPermit()
+
+            // CPU workers are counted as `number of workers - number of blocking tasks`
+            // New cpu worker can be allocated only if there is less cpu workers than [corePoolSize]
+            // [corePoolSize] is a constant value, and change it may lead to unexpected bugs
+            // Fakely increment number of blocking tasks, to artificially decrease the number
+            // of cpu workers.
             incrementBlockingTasks() // Fake blocking tasks to hack cpuWorkers
         }
         signalCpuWork()
+        return true
     }
 
     /**
      * Decrease the amount of allowed CPU threads.
      * Can not decrease the amount below than initial [corePoolSize], in this case
-     * the function does nothing.
+     * the function does nothing and returns `false`.
      *
      * This function is a part of IntelliJ-patch
      */
-    fun decreaseCpuParallelism() {
-        if (tryDecrementOutstandingCpuCompensations()) {
-            if (!tryAcquireCpuPermit()) {
-                cpuDecompensationRequests.incrementAndGet()
-            }
-            decrementBlockingTasks()
+    fun tryDecreaseCpuParallelism(): Boolean {
+        if (!tryDecrementOutstandingCpuCompensations()) return false
+        if (!tryAcquireCpuPermit()) {
+            cpuDecompensationRequests.incrementAndGet()
         }
+        // Cpu permit is acquired, which decreases available cpu permits
+        // Artificially decrease the number of blocking taks, to correctly calculate
+        // number of cpu workers. See [increaseCpuParallelism] for more details.
+        // Blocking tasks can not go below 0, cpu parallelism can decrease only when there
+        // is an outstanding cpu compensation. So for every blocking task decrement there is
+        // a matching incrementBlockingTasks done in [increasingCpuParallelism]
+        decrementBlockingTasks()
+        return true
     }
 
     /** see [Worker.runTaskSafely] */
@@ -1144,7 +1166,7 @@ internal class CoroutineScheduler(
                 // increasing the number of blocking tasks and the available cpu permits. The increase in the number
                 // of blocking tasks will make the scheduler treat the current worker as a non-CPU one.
                 incrementBlockingTasks()
-                increaseCpuParallelism()
+                tryIncrementCpuParallelism()
             }
             val taskParallelismCompensation = (currentTask as? TaskImpl)?.block as? ParallelismCompensation
             taskParallelismCompensation?.increaseParallelismAndLimit()

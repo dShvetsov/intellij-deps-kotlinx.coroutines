@@ -8,7 +8,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.InternalCoroutinesApi
 import kotlin.coroutines.*
 import kotlinx.coroutines.internal.softLimitedParallelism as softLimitedParallelismImpl
-import kotlinx.coroutines.internal.adjustParallelism as adjustParallelismImpl
+import kotlinx.coroutines.internal.tryAdjustParallelism as adjustParallelismImpl
 import kotlinx.coroutines.internal.SoftLimitedDispatcher
 import kotlinx.coroutines.runBlockingWithParallelismCompensation as runBlockingWithParallelismCompensationImpl
 import kotlinx.coroutines.Dispatchers
