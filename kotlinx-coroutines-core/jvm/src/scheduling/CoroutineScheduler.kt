@@ -1166,7 +1166,12 @@ internal class CoroutineScheduler(
                 // increasing the number of blocking tasks and the available cpu permits. The increase in the number
                 // of blocking tasks will make the scheduler treat the current worker as a non-CPU one.
                 incrementBlockingTasks()
-                tryIncrementCpuParallelism()
+                if (tryDecrementDecompensationRequests()) {
+                    // instead of increasing the parallelism limit, we removed a request to decrease it
+                } else {
+                    releaseCpuPermit()
+                }
+                signalCpuWork()
             }
             val taskParallelismCompensation = (currentTask as? TaskImpl)?.block as? ParallelismCompensation
             taskParallelismCompensation?.increaseParallelismAndLimit()
