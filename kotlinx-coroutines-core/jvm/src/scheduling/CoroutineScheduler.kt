@@ -298,8 +298,8 @@ internal class CoroutineScheduler(
 
     /**
      * Number of CPU permits added by [tryIncrementCpuParallelism] calls that have not
-     * yet been reclaimed by a matching [tryDecreaseCpuParallelism] call. Acts as a safe-mechanism that guarantees
-     * that [outstandingCpuCompensations] is in the 0..[MAX_OUTSTANDING_CPU_COMPENSATIONS] range.
+     * yet been reclaimed by a matching [tryDecreaseCpuParallelism] call. Acts as a safety mechanism that
+     * guarantees this counter stays within the 0..[MAX_OUTSTANDING_CPU_COMPENSATIONS] range.
      */
     private val outstandingCpuCompensations = atomic(0)
 
@@ -627,13 +627,13 @@ internal class CoroutineScheduler(
     }
 
     /**
-     * Increase the amount of allowed CPU threads.
+     * Increases the amount of allowed CPU threads.
      *
-     * The amount of compensated threads can not be exceed [MAX_OUTSTANDING_CPU_COMPENSATIONS]
+     * The amount of compensated threads cannot exceed [MAX_OUTSTANDING_CPU_COMPENSATIONS].
      *
-     * Mechanism of cpu compensation is a part of IntelliJ-patch, and has not been tested for
-     * all corner cases such as [corePoolSize] = [MAX_SUPPORTED_POOL_SIZE], where integer overflow
-     * is possible
+     * The CPU compensation mechanism is part of the IntelliJ patch and has not been tested for
+     * all corner cases, such as [corePoolSize] == [MAX_SUPPORTED_POOL_SIZE], where an integer overflow
+     * is possible.
      */
     fun tryIncrementCpuParallelism(): Boolean {
         if (isTerminated) return false
@@ -645,11 +645,11 @@ internal class CoroutineScheduler(
             }
             releaseCpuPermit()
 
-            // CPU workers are counted as `number of workers - number of blocking tasks`
-            // New cpu worker can be allocated only if there is less cpu workers than [corePoolSize]
-            // [corePoolSize] is a constant value, and change it may lead to unexpected bugs
-            // Fakely increment number of blocking tasks, to artificially decrease the number
-            // of cpu workers.
+            // CPU workers are counted as `number of workers - number of blocking tasks`.
+            // A new CPU worker can be allocated only if there are fewer CPU workers than [corePoolSize].
+            // [corePoolSize] is a constant value, and changing it may lead to unexpected bugs.
+            // Artificially increment the number of blocking tasks to decrease the number
+            // of CPU workers.
             incrementBlockingTasks() // Fake blocking tasks to hack cpuWorkers
         }
         signalCpuWork()
@@ -657,23 +657,23 @@ internal class CoroutineScheduler(
     }
 
     /**
-     * Decrease the amount of allowed CPU threads.
-     * Can not decrease the amount below than initial [corePoolSize], in this case
+     * Decreases the amount of allowed CPU threads.
+     * Cannot decrease the amount below the initial [corePoolSize]; in this case
      * the function does nothing and returns `false`.
      *
-     * This function is a part of IntelliJ-patch
+     * This function is part of the IntelliJ patch.
      */
     fun tryDecreaseCpuParallelism(): Boolean {
         if (!tryDecrementOutstandingCpuCompensations()) return false
         if (!tryAcquireCpuPermit()) {
             cpuDecompensationRequests.incrementAndGet()
         }
-        // Cpu permit is acquired, which decreases available cpu permits
-        // Artificially decrease the number of blocking taks, to correctly calculate
-        // number of cpu workers. See [increaseCpuParallelism] for more details.
-        // Blocking tasks can not go below 0, cpu parallelism can decrease only when there
-        // is an outstanding cpu compensation. So for every blocking task decrement there is
-        // a matching incrementBlockingTasks done in [increasingCpuParallelism]
+        // A CPU permit is acquired, which decreases the available CPU permits.
+        // Artificially decrease the number of blocking tasks, to correctly calculate
+        // the number of CPU workers. See [tryIncrementCpuParallelism] for more details.
+        // Blocking tasks cannot go below 0: CPU parallelism can decrease only when there
+        // is an outstanding CPU compensation, so for every blocking task decrement there is
+        // a matching incrementBlockingTasks() call done in [tryIncrementCpuParallelism].
         decrementBlockingTasks()
         return true
     }

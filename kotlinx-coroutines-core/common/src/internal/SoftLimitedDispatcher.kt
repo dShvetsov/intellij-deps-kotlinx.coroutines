@@ -16,12 +16,12 @@ internal interface SoftLimitedParallelism {
     fun softLimitedParallelism(parallelism: Int, name: String?): CoroutineDispatcher
 
     /**
-     * Makes an attempt to adjust the parallelism limit by [parallelismDelta].
+     * Attempts to adjust the parallelism limit by [parallelismDelta].
      *
-     * [parallelismDelta] may be positive or negative value. It is recommended to use +1 and -1.
-     * It is not guaranteed that new parallelism limit will be equal to `oldParallelism + parallelismDelta`:
-     * it is possible that adjustment will be done only partially or ignored at all. The function
-     * returns the true adjustment that was done.
+     * [parallelismDelta] may be a positive or negative value; it is recommended to use +1 and -1.
+     * It is not guaranteed that the new parallelism limit will be equal to `oldParallelism + parallelismDelta`:
+     * the adjustment may be applied only partially, or not at all. The function returns the actual
+     * adjustment that was made.
      */
     fun tryAdjustParallelism(parallelismDelta: Int): Int
 }
@@ -41,7 +41,7 @@ internal fun CoroutineDispatcher.tryAdjustParallelism(parallelism: Int): Int {
     if (this is SoftLimitedParallelism) {
         return this.tryAdjustParallelism(parallelism)
     }
-    throw UnsupportedOperationException("CoroutineDispatcher.increaseParallelism cannot be applied to $this")
+    throw UnsupportedOperationException("CoroutineDispatcher.truAdjustParallelism cannot be applied to $this")
 }
 
 /**
