@@ -329,6 +329,9 @@ internal class CoroutineScheduler(
     }
 
     private inline fun releaseCpuPermit() = controlState.addAndGet(1L shl CPU_PERMITS_SHIFT)
+    private inline fun releaseCpuPermitAndIncrementBlockingWorkers() = controlState.addAndGet(
+        (1L shl CPU_PERMITS_SHIFT) or (1L shl BLOCKING_SHIFT)
+    )
 
     private fun tryDecrementDecompensationRequests(): Boolean {
         val requests = cpuDecompensationRequests.value
@@ -639,18 +642,18 @@ internal class CoroutineScheduler(
         if (isTerminated) return false
         if (tryDecrementDecompensationRequests()) {
             // instead of increasing the parallelism limit, we removed a request to decrease it
+            incrementBlockingTasks()
         } else {
             if (!tryIncrementOutstandingCpuCompensations()) {
                 return false
             }
-            releaseCpuPermit()
 
             // CPU workers are counted as `number of workers - number of blocking tasks`.
             // A new CPU worker can be allocated only if there are fewer CPU workers than [corePoolSize].
             // [corePoolSize] is a constant value, and changing it may lead to unexpected bugs.
             // Artificially increment the number of blocking tasks to decrease the number
             // of CPU workers.
-            incrementBlockingTasks() // Fake blocking tasks to hack cpuWorkers
+            releaseCpuPermitAndIncrementBlockingWorkers()
         }
         signalCpuWork()
         return true
@@ -1165,11 +1168,11 @@ internal class CoroutineScheduler(
                 // hard-to-notice concurrency issues. Instead, let's increase the core pool size effectively by
                 // increasing the number of blocking tasks and the available cpu permits. The increase in the number
                 // of blocking tasks will make the scheduler treat the current worker as a non-CPU one.
-                incrementBlockingTasks()
                 if (tryDecrementDecompensationRequests()) {
                     // instead of increasing the parallelism limit, we removed a request to decrease it
+                    incrementBlockingTasks()
                 } else {
-                    releaseCpuPermit()
+                    releaseCpuPermitAndIncrementBlockingWorkers()
                 }
                 signalCpuWork()
             }
