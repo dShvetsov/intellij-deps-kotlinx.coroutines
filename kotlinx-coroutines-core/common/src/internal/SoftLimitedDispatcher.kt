@@ -60,7 +60,7 @@ internal class SoftLimitedDispatcher(
     private val hardParallelism: Int? = null
 ) : CoroutineDispatcher(), Delay by (dispatcher as? Delay ?: DefaultDelay), SoftLimitedParallelism {
     private val initialParallelism = parallelism
-    private val additionalSoftParallelism = 0
+    private val additionalSoftParallelism = atomic(0)
     // `parallelism limit - runningWorkers`; may be < 0 if decompensation is expected
     private val availablePermits = atomic(parallelism)
 
@@ -70,7 +70,7 @@ internal class SoftLimitedDispatcher(
 
     // totalParallelism doesn't detect if parallelism was compensated for a specific thread
     private val totalParallelism
-        get() = initialParallelism + additionalSoftParallelism
+        get() = initialParallelism + additionalSoftParallelism.value
 
     override fun limitedParallelism(parallelism: Int, name: String?): CoroutineDispatcher {
         return super.limitedParallelism(parallelism, name)
@@ -82,21 +82,14 @@ internal class SoftLimitedDispatcher(
         return SoftLimitedDispatcher(this, parallelism, name)
     }
 
-    override fun tryAdjustParallelism(parallelismDelta: Int): Int {
+    override fun tryAdjustParallelism(parallelismDelta: Int): Int = availablePermits.loop { permits ->
         if (totalParallelism + parallelismDelta !in 1..(hardParallelism ?: Int.MAX_VALUE)) {
-            return 0
+            return 0 // in case parallelism was adjusted by another thread
         }
-        synchronized(workerAllocationLock) {
-            if (totalParallelism + parallelismDelta !in 1..(hardParallelism ?: Int.MAX_VALUE)) {
-                return 0 // in case parallelism was adjusted by another thread
-            }
-            val permits = availablePermits.value
-            val success = availablePermits.compareAndSet(permits, permits + parallelismDelta)
-            if (success) {
-                return parallelismDelta
-            } else {
-                return 0
-            }
+        val success = availablePermits.compareAndSet(permits, permits + parallelismDelta)
+        if (success) {
+            additionalSoftParallelism.addAndGet(parallelismDelta)
+            return parallelismDelta
         }
     }
 
