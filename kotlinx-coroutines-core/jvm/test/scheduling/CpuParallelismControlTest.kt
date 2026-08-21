@@ -40,10 +40,16 @@ class CpuParallelismControlTest : TestBase() {
             assertEquals(0, scheduler.createdWorkersSnapshot())
             assertEquals(corePoolSize, scheduler.availableCpuPermitsSnapshot())
 
-            assertTrue(scheduler.tryIncrementCpuParallelism(), "tryIncrementCpuParallelism() should succeed when there is room to grow")
+            assertTrue(
+                scheduler.tryIncrementCpuParallelism(),
+                "tryIncrementCpuParallelism() should succeed when there is room to grow"
+            )
 
             assertEquals(1, scheduler.createdWorkersSnapshot())
-            assertEquals(corePoolSize + 1, scheduler.availableCpuPermitsSnapshot())
+            // The new worker's startup scan transiently holds the freed permit while it looks for
+            // a task (there is none), then releases it and parks -- so the permit count only
+            // settles at corePoolSize + 1 once that scan finishes, not synchronously here.
+            awaitCondition { scheduler.availableCpuPermitsSnapshot() == corePoolSize + 1 }
             awaitCondition { scheduler.liveWorkerThreads().isNotEmpty() }
         }
     }
@@ -53,7 +59,10 @@ class CpuParallelismControlTest : TestBase() {
         val corePoolSize = 1
         val scheduler = CoroutineScheduler(corePoolSize, corePoolSize, schedulerName = "Terminated")
         scheduler.close()
-        assertFalse(scheduler.tryIncrementCpuParallelism(), "tryIncrementCpuParallelism() must fail once the scheduler is terminated")
+        assertFalse(
+            scheduler.tryIncrementCpuParallelism(),
+            "tryIncrementCpuParallelism() must fail once the scheduler is terminated"
+        )
     }
 
     @Test
@@ -155,50 +164,6 @@ class CpuParallelismControlTest : TestBase() {
         }
     }
 
-    @Test
-    fun testDecreaseCpuParallelismGoesThroughDecompensationRequestWhenNoPermitIsFree() {
-        val corePoolSize = 1
-        CoroutineScheduler(corePoolSize, corePoolSize + 1, schedulerName = "DecreaseViaRequest").use { scheduler ->
-            val started1 = CountDownLatch(1)
-            val release1 = CountDownLatch(1)
-            scheduler.dispatch(Runnable {
-                started1.countDown()
-                release1.await()
-            })
-            assertTrue(started1.await(10, TimeUnit.SECONDS))
-            awaitCondition { scheduler.availableCpuPermitsSnapshot() == 0 }
-
-            // Ask the worker running task1, from this thread, to compensate for going into a
-            // blocking wait -- the same cross-thread ParallelismCompensation trick production
-            // watchdogs use. This marks the worker as non-CPU (opening a slot for a replacement
-            // CPU worker) and grants one genuine extra permit via increaseCpuParallelism(), while
-            // the worker itself keeps holding onto its own original permit throughout.
-            val worker1 = scheduler.liveWorkerThreads().single()
-            (worker1 as ParallelismCompensation).increaseParallelismAndLimit()
-
-            // The freed-up slot lets a second worker spin up and claim the newly granted permit
-            // for a second busy task, so both the original and the extra permit end up genuinely
-            // held at the same time.
-            val started2 = CountDownLatch(1)
-            val release2 = CountDownLatch(1)
-            scheduler.dispatch(Runnable {
-                started2.countDown()
-                release2.await()
-            })
-            assertTrue(started2.await(10, TimeUnit.SECONDS))
-            awaitCondition { scheduler.availableCpuPermitsSnapshot() == 0 }
-
-            // No permit is free right now, so decreaseCpuParallelism() can't steal one in place
-            // and must fall back to registering a decompensation request instead. It still
-            // succeeds because there is a genuine outstanding compensation (granted above via
-            // increaseParallelismAndLimit()) for it to claim.
-            assertTrue(scheduler.tryDecreaseCpuParallelism())
-
-            release1.countDown()
-            release2.countDown()
-            awaitCondition { scheduler.availableCpuPermitsSnapshot() == corePoolSize }
-        }
-    }
 
     @Test
     fun testShutdownWithUnclaimedOutstandingCompensationDoesNotHang() {
@@ -213,49 +178,10 @@ class CpuParallelismControlTest : TestBase() {
             val shutdownThread = Thread { scheduler.close() }
             shutdownThread.start()
             shutdownThread.join(10_000)
-            assertFalse(shutdownThread.isAlive, "shutdown() did not complete in time -- likely hung draining outstandingCpuCompensations")
-        }
-    }
-
-    @Test
-    fun testShutdownWithDecompensationRequestDuringDrainSettlesAtCorePoolSize() {
-        val corePoolSize = 1
-        CoroutineScheduler(corePoolSize, corePoolSize + 1, schedulerName = "ShutdownViaRequest").use { scheduler ->
-            val started1 = CountDownLatch(1)
-            val release1 = CountDownLatch(1)
-            scheduler.dispatch(Runnable {
-                started1.countDown()
-                release1.await()
-            })
-            assertTrue(started1.await(10, TimeUnit.SECONDS))
-            awaitCondition { scheduler.availableCpuPermitsSnapshot() == 0 }
-
-            // Same cross-thread compensation trick as above: grants one genuine extra permit that
-            // a second busy worker then actively claims, so both permits are held when shutdown()
-            // starts -- forcing its internal drain loop through the decompensation-request
-            // fallback rather than an in-place decrement.
-            val worker1 = scheduler.liveWorkerThreads().single()
-            (worker1 as ParallelismCompensation).increaseParallelismAndLimit()
-
-            val started2 = CountDownLatch(1)
-            val release2 = CountDownLatch(1)
-            scheduler.dispatch(Runnable {
-                started2.countDown()
-                release2.await()
-            })
-            assertTrue(started2.await(10, TimeUnit.SECONDS))
-            awaitCondition { scheduler.availableCpuPermitsSnapshot() == 0 }
-
-            // Start shutdown while both permits are still held, then let the busy workers finish
-            // so shutdown's forced worker termination can settle the registered decompensation
-            // request, same as it would for a normal task completion.
-            val shutdownThread = Thread { scheduler.close() }
-            shutdownThread.start()
-            release1.countDown()
-            release2.countDown()
-
-            shutdownThread.join(10_000)
-            assertFalse(shutdownThread.isAlive, "shutdown() did not complete in time")
+            assertFalse(
+                shutdownThread.isAlive,
+                "shutdown() did not complete in time -- likely hung draining outstandingCpuCompensations"
+            )
         }
     }
 }

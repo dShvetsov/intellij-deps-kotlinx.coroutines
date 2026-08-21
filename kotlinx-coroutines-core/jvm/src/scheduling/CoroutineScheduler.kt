@@ -399,7 +399,8 @@ internal class CoroutineScheduler(
         if (!_isTerminated.compareAndSet(false, true)) return
 
         while (outstandingCpuCompensations.value > 0) {
-            tryDecreaseCpuParallelism()
+            val decreased = tryDecreaseCpuParallelism()
+            assert(decreased)
         }
 
         // make sure we are not waiting for the current thread
@@ -649,14 +650,14 @@ internal class CoroutineScheduler(
      */
     fun tryIncrementCpuParallelism(): Boolean {
         if (isTerminated) return false
+        if (!tryIncrementOutstandingCpuCompensations()) {
+            return false
+        }
+
         if (tryDecrementDecompensationRequests()) {
             // instead of increasing the parallelism limit, we removed a request to decrease it
             incrementBlockingTasks()
         } else {
-            if (!tryIncrementOutstandingCpuCompensations()) {
-                return false
-            }
-
             // CPU workers are counted as `number of workers - number of blocking tasks`.
             // A new CPU worker can be allocated only if there are fewer CPU workers than [corePoolSize].
             // [corePoolSize] is a constant value, and changing it may lead to unexpected bugs.
@@ -687,6 +688,7 @@ internal class CoroutineScheduler(
 
         if (!tryAcquireCpuPermitAndDecrementBlockingTasks()) {
             decrementBlockingTasks()
+            cpuDecompensationRequests.incrementAndGet()
         }
 
         return true
