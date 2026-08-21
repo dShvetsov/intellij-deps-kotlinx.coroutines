@@ -181,7 +181,7 @@ internal open class SchedulerCoroutineDispatcher(
 
         if (parallelismDelta > 0) {
             return (1..parallelismDelta).sumOf {
-                coroutineScheduler.tryIncrementCpuParallelism().toInt()
+                coroutineScheduler.tryIncreaseCpuParallelism().toInt()
             }
         }
         if (parallelismDelta < 0) {

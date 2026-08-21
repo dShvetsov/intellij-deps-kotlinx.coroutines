@@ -41,7 +41,7 @@ class CpuParallelismControlTest : TestBase() {
             assertEquals(corePoolSize, scheduler.availableCpuPermitsSnapshot())
 
             assertTrue(
-                scheduler.tryIncrementCpuParallelism(),
+                scheduler.tryIncreaseCpuParallelism(),
                 "tryIncrementCpuParallelism() should succeed when there is room to grow"
             )
 
@@ -60,7 +60,7 @@ class CpuParallelismControlTest : TestBase() {
         val scheduler = CoroutineScheduler(corePoolSize, corePoolSize, schedulerName = "Terminated")
         scheduler.close()
         assertFalse(
-            scheduler.tryIncrementCpuParallelism(),
+            scheduler.tryIncreaseCpuParallelism(),
             "tryIncrementCpuParallelism() must fail once the scheduler is terminated"
         )
     }
@@ -82,7 +82,7 @@ class CpuParallelismControlTest : TestBase() {
             assertTrue(started.await(10, TimeUnit.SECONDS))
             awaitCondition { scheduler.availableCpuPermitsSnapshot() == 0 }
 
-            assertTrue(scheduler.tryIncrementCpuParallelism())
+            assertTrue(scheduler.tryIncreaseCpuParallelism())
             awaitCondition { scheduler.availableCpuPermitsSnapshot() == 1 }
 
             // Prove the increase is a real, reclaimable credit (not just a transient bump): a matching
@@ -102,7 +102,7 @@ class CpuParallelismControlTest : TestBase() {
             assertEquals(corePoolSize, scheduler.availableCpuPermitsSnapshot())
 
             val n = 3
-            repeat(n) { assertTrue(scheduler.tryIncrementCpuParallelism()) }
+            repeat(n) { assertTrue(scheduler.tryIncreaseCpuParallelism()) }
             awaitCondition { scheduler.availableCpuPermitsSnapshot() == corePoolSize + n }
 
             repeat(n) {
@@ -152,7 +152,7 @@ class CpuParallelismControlTest : TestBase() {
 
             // Nothing is using the pool, so the permit increaseCpuParallelism() grants here is
             // never claimed by any worker -- it just sits free.
-            assertTrue(scheduler.tryIncrementCpuParallelism())
+            assertTrue(scheduler.tryIncreaseCpuParallelism())
             awaitCondition { scheduler.availableCpuPermitsSnapshot() == corePoolSize + 1 }
 
             // With a free permit available, decreaseCpuParallelism() should steal it back via
@@ -172,7 +172,7 @@ class CpuParallelismControlTest : TestBase() {
             // Leaves outstandingCpuCompensations == 1 with nobody ever having claimed the extra
             // permit -- shutdown() must drain this itself before its availableCpuPermits ==
             // corePoolSize assertion, via decreaseCpuParallelism().
-            assertTrue(scheduler.tryIncrementCpuParallelism())
+            assertTrue(scheduler.tryIncreaseCpuParallelism())
             awaitCondition { scheduler.availableCpuPermitsSnapshot() == corePoolSize + 1 }
 
             val shutdownThread = Thread { scheduler.close() }

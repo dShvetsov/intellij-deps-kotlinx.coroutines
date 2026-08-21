@@ -297,7 +297,7 @@ internal class CoroutineScheduler(
     private val cpuDecompensationRequests = atomic(0)
 
     /**
-     * Number of CPU permits added by [tryIncrementCpuParallelism] calls that have not
+     * Number of CPU permits added by [tryIncreaseCpuParallelism] calls that have not
      * yet been reclaimed by a matching [tryDecreaseCpuParallelism] call. Acts as a safety mechanism that
      * guarantees this counter stays within the 0..[MAX_OUTSTANDING_CPU_COMPENSATIONS] range.
      */
@@ -648,7 +648,7 @@ internal class CoroutineScheduler(
      * all corner cases, such as [corePoolSize] == [MAX_SUPPORTED_POOL_SIZE], where an integer overflow
      * is possible.
      */
-    fun tryIncrementCpuParallelism(): Boolean {
+    fun tryIncreaseCpuParallelism(): Boolean {
         if (isTerminated) return false
         if (!tryIncrementOutstandingCpuCompensations()) {
             return false
