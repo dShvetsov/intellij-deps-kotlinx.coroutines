@@ -318,13 +318,22 @@ internal class CoroutineScheduler(
     private inline fun incrementBlockingTasks() = controlState.addAndGet(1L shl BLOCKING_SHIFT)
 
     private inline fun decrementBlockingTasks() {
-        controlState.addAndGet(-(1L shl BLOCKING_SHIFT))
+        val oldState = controlState.getAndAdd(-(1L shl BLOCKING_SHIFT))
+        assert{ blockingTasks(oldState) > 0 }
     }
 
     private inline fun tryAcquireCpuPermit(): Boolean = controlState.loop { state ->
         val available = availableCpuPermits(state)
         if (available == 0) return false
         val update = state - (1L shl CPU_PERMITS_SHIFT)
+        if (controlState.compareAndSet(state, update)) return true
+    }
+
+    private inline fun tryAcquireCpuPermitAndDecrementBlockingTasks(): Boolean = controlState.loop { state ->
+        val available = availableCpuPermits(state)
+        if (available == 0) return false
+        assert { blockingTasks(state) > 0 }
+        val update = state - (1L shl CPU_PERMITS_SHIFT) - (1L shl BLOCKING_SHIFT)
         if (controlState.compareAndSet(state, update)) return true
     }
 
@@ -668,16 +677,18 @@ internal class CoroutineScheduler(
      */
     fun tryDecreaseCpuParallelism(): Boolean {
         if (!tryDecrementOutstandingCpuCompensations()) return false
-        if (!tryAcquireCpuPermit()) {
-            cpuDecompensationRequests.incrementAndGet()
-        }
+
         // A CPU permit is acquired, which decreases the available CPU permits.
         // Artificially decrease the number of blocking tasks, to correctly calculate
         // the number of CPU workers. See [tryIncrementCpuParallelism] for more details.
         // Blocking tasks cannot go below 0: CPU parallelism can decrease only when there
         // is an outstanding CPU compensation, so for every blocking task decrement there is
         // a matching incrementBlockingTasks() call done in [tryIncrementCpuParallelism].
-        decrementBlockingTasks()
+
+        if (!tryAcquireCpuPermitAndDecrementBlockingTasks()) {
+            decrementBlockingTasks()
+        }
+
         return true
     }
 
