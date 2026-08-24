@@ -1189,11 +1189,11 @@ internal class CoroutineScheduler(
                 // hard-to-notice concurrency issues. Instead, let's increase the core pool size effectively by
                 // increasing the number of blocking tasks and the available cpu permits. The increase in the number
                 // of blocking tasks will make the scheduler treat the current worker as a non-CPU one.
+                incrementBlockingTasks()
                 if (tryDecrementDecompensationRequests()) {
                     // instead of increasing the parallelism limit, we removed a request to decrease it
-                    incrementBlockingTasks()
                 } else {
-                    releaseCpuPermitAndIncrementBlockingWorkers()
+                    releaseCpuPermit()
                 }
                 signalCpuWork()
             }
