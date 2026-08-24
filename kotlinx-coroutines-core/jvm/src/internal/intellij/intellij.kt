@@ -8,7 +8,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.InternalCoroutinesApi
 import kotlin.coroutines.*
 import kotlinx.coroutines.internal.softLimitedParallelism as softLimitedParallelismImpl
-import kotlinx.coroutines.internal.tryAdjustParallelism as adjustParallelismImpl
+import kotlinx.coroutines.internal.tryAdjustParallelism as tryAdjustParallelismImpl
 import kotlinx.coroutines.internal.SoftLimitedDispatcher
 import kotlinx.coroutines.runBlockingWithParallelismCompensation as runBlockingWithParallelismCompensationImpl
 import kotlinx.coroutines.Dispatchers
@@ -72,8 +72,8 @@ public object IntellijCoroutines {
      * [softLimitedParallelism] has returned. Throws [UnsupportedOperationException] if [this] does not support
      * the parallelism adjustment mechanism.
      */
-    public fun CoroutineDispatcher.adjustParallelism(parallelism: Int) {
-        adjustParallelismImpl(parallelism)
+    public fun CoroutineDispatcher.tryAdjustParallelism(parallelism: Int): Int {
+        return tryAdjustParallelismImpl(parallelism)
     }
 
     /**
