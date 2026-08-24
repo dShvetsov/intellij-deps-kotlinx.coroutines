@@ -57,7 +57,6 @@ internal class SoftLimitedDispatcher(
     private val dispatcher: CoroutineDispatcher,
     parallelism: Int,
     private val name: String?,
-    private val hardParallelism: Int? = null
 ) : CoroutineDispatcher(), Delay by (dispatcher as? Delay ?: DefaultDelay), SoftLimitedParallelism {
     private val initialParallelism = parallelism
     private val additionalSoftParallelism = atomic(0)
@@ -83,8 +82,8 @@ internal class SoftLimitedDispatcher(
     }
 
     override fun tryAdjustParallelism(parallelismDelta: Int): Int = availablePermits.loop { permits ->
-        if (totalParallelism + parallelismDelta !in 1..(hardParallelism ?: Int.MAX_VALUE)) {
-            return 0 // in case parallelism was adjusted by another thread
+        if (totalParallelism.toLong() + parallelismDelta !in 1..Int.MAX_VALUE) {
+            return 0
         }
         val success = availablePermits.compareAndSet(permits, permits + parallelismDelta)
         if (success) {
