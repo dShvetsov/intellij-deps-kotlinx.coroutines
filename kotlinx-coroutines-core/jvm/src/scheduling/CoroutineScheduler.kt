@@ -382,7 +382,6 @@ internal class CoroutineScheduler(
 
         internal const val MIN_SUPPORTED_POOL_SIZE = 1 // we support 1 for test purposes, but it is not usually used
         internal const val MAX_SUPPORTED_POOL_SIZE = (1 shl BLOCKING_SHIFT) - 2
-        internal const val MAX_OUTSTANDING_CPU_COMPENSATIONS = 1024
         // Masks of parkedWorkersStack
         private const val PARKED_INDEX_MASK = CREATED_MASK
         private const val PARKED_VERSION_MASK = CREATED_MASK.inv()
