@@ -7,7 +7,7 @@ import kotlin.coroutines.*
 import kotlin.test.*
 
 /**
- * Exercises `CoroutineDispatcher.adjustParallelism(+1)` / `(-1)` at the dispatcher level (as opposed to
+ * Exercises `CoroutineDispatcher.tryAdjustParallelism(+1)` / `(-1)` at the dispatcher level (as opposed to
  * [CpuParallelismControlTest], which drives [CoroutineScheduler]'s increase/decrease methods directly), for
  * both flavors of dispatcher that implement [SoftLimitedParallelism]:
  *  - a plain [SchedulerCoroutineDispatcher] (what backs `Dispatchers.Default`)

@@ -42,7 +42,7 @@ class CpuParallelismControlTest : TestBase() {
 
             assertTrue(
                 scheduler.tryIncreaseCpuParallelism(),
-                "tryIncrementCpuParallelism() should succeed when there is room to grow"
+                "tryIncreaseCpuParallelism() should succeed when there is room to grow"
             )
 
             assertEquals(1, scheduler.createdWorkersSnapshot())
@@ -61,7 +61,7 @@ class CpuParallelismControlTest : TestBase() {
         scheduler.close()
         assertFalse(
             scheduler.tryIncreaseCpuParallelism(),
-            "tryIncrementCpuParallelism() must fail once the scheduler is terminated"
+            "tryIncreaseCpuParallelism() must fail once the scheduler is terminated"
         )
     }
 

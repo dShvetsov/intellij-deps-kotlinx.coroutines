@@ -640,13 +640,16 @@ internal class CoroutineScheduler(
     }
 
     /**
-     * Increases the amount of allowed CPU threads.
+     * Increases the amount of allowed CPU threads by one.
      *
      * The amount of compensated threads cannot exceed [MAX_OUTSTANDING_CPU_COMPENSATIONS].
      *
      * The CPU compensation mechanism is part of the IntelliJ patch and has not been tested for
      * all corner cases, such as [corePoolSize] == [MAX_SUPPORTED_POOL_SIZE], where an integer overflow
      * is possible.
+     *
+     * @return `true` if the parallelism was increased, `false` if the scheduler is already terminated or
+     * [MAX_OUTSTANDING_CPU_COMPENSATIONS] has already been reached.
      */
     fun tryIncreaseCpuParallelism(): Boolean {
         if (isTerminated) return false
@@ -670,21 +673,26 @@ internal class CoroutineScheduler(
     }
 
     /**
-     * Decreases the amount of allowed CPU threads.
+     * Decreases the amount of allowed CPU threads by one, reclaiming a previous
+     * [tryIncreaseCpuParallelism] call.
+     *
      * Cannot decrease the amount below the initial [corePoolSize]; in this case
      * the function does nothing and returns `false`.
      *
      * This function is part of the IntelliJ patch.
+     *
+     * @return `true` if the parallelism was decreased, `false` if there is no outstanding
+     * [tryIncreaseCpuParallelism] call left to reclaim.
      */
     fun tryDecreaseCpuParallelism(): Boolean {
         if (!tryDecrementOutstandingCpuCompensations()) return false
 
         // A CPU permit is acquired, which decreases the available CPU permits.
         // Artificially decrease the number of blocking tasks, to correctly calculate
-        // the number of CPU workers. See [tryIncrementCpuParallelism] for more details.
+        // the number of CPU workers. See [tryIncreaseCpuParallelism] for more details.
         // Blocking tasks cannot go below 0: CPU parallelism can decrease only when there
         // is an outstanding CPU compensation, so for every blocking task decrement there is
-        // a matching incrementBlockingTasks() call done in [tryIncrementCpuParallelism].
+        // a matching incrementBlockingTasks() call done in [tryIncreaseCpuParallelism].
 
         if (!tryAcquireCpuPermitAndDecrementBlockingTasks()) {
             decrementBlockingTasks()
