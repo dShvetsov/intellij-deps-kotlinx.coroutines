@@ -24,7 +24,7 @@ internal interface SoftLimitedParallelism {
      * @param parallelismDelta a positive or negative value; it is recommended to use +1 and -1.
      * @return the actual adjustment that was made.
      */
-    fun tryAdjustParallelism(parallelismDelta: Int): Int
+    fun tryAdjustParallelism(parallelismDelta: Byte): Byte
 }
 
 /**
@@ -38,9 +38,9 @@ internal fun CoroutineDispatcher.softLimitedParallelism(parallelism: Int, name: 
     throw UnsupportedOperationException("CoroutineDispatcher.softLimitedParallelism cannot be applied to $this")
 }
 
-internal fun CoroutineDispatcher.tryAdjustParallelism(parallelism: Int): Int {
+internal fun CoroutineDispatcher.tryAdjustParallelism(parallelismDelta: Byte): Byte {
     if (this is SoftLimitedParallelism) {
-        return this.tryAdjustParallelism(parallelism)
+        return this.tryAdjustParallelism(parallelismDelta)
     }
     throw UnsupportedOperationException("CoroutineDispatcher.tryAdjustParallelism cannot be applied to $this")
 }
@@ -82,14 +82,17 @@ internal class SoftLimitedDispatcher(
         return SoftLimitedDispatcher(this, parallelism, name)
     }
 
-    override fun tryAdjustParallelism(parallelismDelta: Int): Int = availablePermits.loop { permits ->
-        if (totalParallelism.toLong() + parallelismDelta !in 1..Int.MAX_VALUE) {
-            return 0
-        }
-        val success = availablePermits.compareAndSet(permits, permits + parallelismDelta)
-        if (success) {
-            additionalSoftParallelism.addAndGet(parallelismDelta)
-            return parallelismDelta
+    override fun tryAdjustParallelism(parallelismDelta: Byte): Byte {
+        val delta = parallelismDelta.toInt()
+        return availablePermits.loop { permits ->
+            if (totalParallelism.toLong() + delta !in 1..Int.MAX_VALUE) {
+                return 0
+            }
+            val success = availablePermits.compareAndSet(permits, permits + delta)
+            if (success) {
+                additionalSoftParallelism.addAndGet(delta)
+                return parallelismDelta
+            }
         }
     }
 

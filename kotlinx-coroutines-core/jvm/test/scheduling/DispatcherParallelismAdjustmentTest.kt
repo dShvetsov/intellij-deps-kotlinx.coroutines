@@ -31,7 +31,7 @@ class DispatcherParallelismAdjustmentTest : SchedulerTestBase() {
         // All corePoolSize permits are held by the busy tasks above (which are still blocked on
         // release), so this extra task can only start if adjustParallelism(1) genuinely grants a
         // new permit.
-        assertEquals(1, dispatcher.tryAdjustParallelism(1), "a single unit of headroom should be granted in full")
+        assertEquals(1.toByte(), dispatcher.tryAdjustParallelism(1), "a single unit of headroom should be granted in full")
         val extraStarted = CountDownLatch(1)
         dispatcher.dispatch(EmptyCoroutineContext, Runnable { extraStarted.countDown() })
         assertTrue(
@@ -39,7 +39,7 @@ class DispatcherParallelismAdjustmentTest : SchedulerTestBase() {
             "adjustParallelism(1) should let one extra task run concurrently with the corePoolSize busy ones"
         )
 
-        assertEquals(-1, dispatcher.tryAdjustParallelism(-1), "the previously granted unit of headroom should be reclaimed in full")
+        assertEquals((-1).toByte(), dispatcher.tryAdjustParallelism(-1), "the previously granted unit of headroom should be reclaimed in full")
         release.countDown()
     }
 
@@ -49,8 +49,8 @@ class DispatcherParallelismAdjustmentTest : SchedulerTestBase() {
         maxPoolSize = 64
         // tryAdjustParallelism(delta) increments/decrements one unit at a time internally; make sure it
         // does so exactly `delta` times rather than off by one in either direction.
-        assertEquals(3, dispatcher.tryAdjustParallelism(3), "adjustParallelism(3) should grant exactly 3 extra units of parallelism")
-        assertEquals(-3, dispatcher.tryAdjustParallelism(-3), "adjustParallelism(-3) should reclaim exactly the 3 units granted above")
+        assertEquals(3.toByte(), dispatcher.tryAdjustParallelism(3), "adjustParallelism(3) should grant exactly 3 extra units of parallelism")
+        assertEquals((-3).toByte(), dispatcher.tryAdjustParallelism(-3), "adjustParallelism(-3) should reclaim exactly the 3 units granted above")
     }
 
     @Test
@@ -58,7 +58,7 @@ class DispatcherParallelismAdjustmentTest : SchedulerTestBase() {
         corePoolSize = 2
         // No matching adjustParallelism(1) beforehand -> zero legitimate headroom, so this must not
         // shrink the pool below corePoolSize.
-        assertEquals(0, dispatcher.tryAdjustParallelism(-1), "there is no outstanding compensation to reclaim, so nothing should be adjusted")
+        assertEquals(0.toByte(), dispatcher.tryAdjustParallelism(-1), "there is no outstanding compensation to reclaim, so nothing should be adjusted")
 
         val started = CountDownLatch(corePoolSize)
         val release = CountDownLatch(1)
@@ -90,7 +90,7 @@ class DispatcherParallelismAdjustmentTest : SchedulerTestBase() {
         }
         assertTrue(started.await(10, TimeUnit.SECONDS))
 
-        assertEquals(1, soft.tryAdjustParallelism(1), "a single unit of headroom should be granted in full")
+        assertEquals(1.toByte(), soft.tryAdjustParallelism(1), "a single unit of headroom should be granted in full")
         val extraStarted = CountDownLatch(1)
         soft.dispatch(EmptyCoroutineContext, Runnable { extraStarted.countDown() })
         assertTrue(
@@ -98,7 +98,7 @@ class DispatcherParallelismAdjustmentTest : SchedulerTestBase() {
             "adjustParallelism(1) should let one extra task run concurrently on the soft-limited view"
         )
 
-        assertEquals(-1, soft.tryAdjustParallelism(-1), "the previously granted unit of headroom should be reclaimed in full")
+        assertEquals((-1).toByte(), soft.tryAdjustParallelism(-1), "the previously granted unit of headroom should be reclaimed in full")
         release.countDown()
     }
 
@@ -107,7 +107,7 @@ class DispatcherParallelismAdjustmentTest : SchedulerTestBase() {
         val parallelism = 2
         val soft = softBlockingDispatcher(parallelism)
 
-        assertEquals(-1, soft.tryAdjustParallelism(-1), "a soft-limited view is free to shrink below its initial parallelism")
+        assertEquals((-1).toByte(), soft.tryAdjustParallelism(-1), "a soft-limited view is free to shrink below its initial parallelism")
 
         val started = CountDownLatch(parallelism)
         val release = CountDownLatch(1)
