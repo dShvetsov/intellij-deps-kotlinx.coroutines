@@ -57,7 +57,7 @@ internal fun CoroutineDispatcher.tryAdjustParallelism(parallelismDelta: Byte): B
 internal class SoftLimitedDispatcher(
     private val dispatcher: CoroutineDispatcher,
     parallelism: Int,
-    private val name: String?,
+    private val name: String?
 ) : CoroutineDispatcher(), Delay by (dispatcher as? Delay ?: DefaultDelay), SoftLimitedParallelism {
     private val initialParallelism = parallelism
     private val additionalSoftParallelism = atomic(0)

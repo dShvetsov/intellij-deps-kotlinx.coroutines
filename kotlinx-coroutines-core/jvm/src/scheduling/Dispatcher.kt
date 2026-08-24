@@ -177,17 +177,17 @@ internal open class SchedulerCoroutineDispatcher(
     }
 
     override fun tryAdjustParallelism(parallelismDelta: Byte): Byte {
-        fun Boolean.toInt() = if (this) 1 else 0
+        fun Boolean.toByte() = if (this) 1 else 0
 
         val delta = parallelismDelta.toInt()
         if (delta > 0) {
             return (1..delta).sumOf {
-                coroutineScheduler.tryIncreaseCpuParallelism().toInt()
+                coroutineScheduler.tryIncreaseCpuParallelism().toByte()
             }.toByte()
         }
         if (delta < 0) {
             val successfulAdjustments = (1..-delta).sumOf {
-                coroutineScheduler.tryDecreaseCpuParallelism().toInt()
+                coroutineScheduler.tryDecreaseCpuParallelism().toByte()
             }
             return (-successfulAdjustments).toByte()
         }
