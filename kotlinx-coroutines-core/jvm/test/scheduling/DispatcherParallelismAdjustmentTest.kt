@@ -21,27 +21,38 @@ class DispatcherParallelismAdjustmentTest : SchedulerTestBase() {
         corePoolSize = 2
         val started = CountDownLatch(corePoolSize)
         val release = CountDownLatch(1)
-        repeat(corePoolSize) {
-            dispatcher.dispatch(EmptyCoroutineContext, Runnable {
-                started.countDown()
-                release.await()
-            })
+        try {
+            repeat(corePoolSize) {
+                dispatcher.dispatch(EmptyCoroutineContext, Runnable {
+                    started.countDown()
+                    release.await()
+                })
+            }
+            assertTrue(started.await(10, TimeUnit.SECONDS))
+
+            // All corePoolSize permits are held by the busy tasks above (which are still blocked on
+            // release), so this extra task can only start if adjustParallelism(1) genuinely grants a
+            // new permit.
+            assertEquals(
+                1.toByte(),
+                dispatcher.tryAdjustParallelism(1),
+                "a single unit of headroom should be granted in full"
+            )
+            val extraStarted = CountDownLatch(1)
+            dispatcher.dispatch(EmptyCoroutineContext, Runnable { extraStarted.countDown() })
+            assertTrue(
+                extraStarted.await(10, TimeUnit.SECONDS),
+                "adjustParallelism(1) should let one extra task run concurrently with the corePoolSize busy ones"
+            )
+
+            assertEquals(
+                (-1).toByte(),
+                dispatcher.tryAdjustParallelism(-1),
+                "the previously granted unit of headroom should be reclaimed in full"
+            )
+        } finally {
+            release.countDown()
         }
-        assertTrue(started.await(10, TimeUnit.SECONDS))
-
-        // All corePoolSize permits are held by the busy tasks above (which are still blocked on
-        // release), so this extra task can only start if adjustParallelism(1) genuinely grants a
-        // new permit.
-        assertEquals(1.toByte(), dispatcher.tryAdjustParallelism(1), "a single unit of headroom should be granted in full")
-        val extraStarted = CountDownLatch(1)
-        dispatcher.dispatch(EmptyCoroutineContext, Runnable { extraStarted.countDown() })
-        assertTrue(
-            extraStarted.await(10, TimeUnit.SECONDS),
-            "adjustParallelism(1) should let one extra task run concurrently with the corePoolSize busy ones"
-        )
-
-        assertEquals((-1).toByte(), dispatcher.tryAdjustParallelism(-1), "the previously granted unit of headroom should be reclaimed in full")
-        release.countDown()
     }
 
     @Test
@@ -63,17 +74,20 @@ class DispatcherParallelismAdjustmentTest : SchedulerTestBase() {
 
         val started = CountDownLatch(corePoolSize)
         val release = CountDownLatch(1)
-        repeat(corePoolSize) {
-            dispatcher.dispatch(EmptyCoroutineContext, Runnable {
-                started.countDown()
-                release.await()
-            })
+        try {
+            repeat(corePoolSize) {
+                dispatcher.dispatch(EmptyCoroutineContext, Runnable {
+                    started.countDown()
+                    release.await()
+                })
+            }
+            assertTrue(
+                started.await(10, TimeUnit.SECONDS),
+                "adjustParallelism(-1) without a matching increase must not shrink the pool below corePoolSize"
+            )
+        } finally {
+            release.countDown()
         }
-        assertTrue(
-            started.await(10, TimeUnit.SECONDS),
-            "adjustParallelism(-1) without a matching increase must not shrink the pool below corePoolSize"
-        )
-        release.countDown()
     }
 
     @Test
@@ -127,18 +141,44 @@ class DispatcherParallelismAdjustmentTest : SchedulerTestBase() {
         release.countDown()
     }
 
-    /**
-     * Regression test for a race in [SoftLimitedDispatcher.tryAdjustParallelism]: the bounds check
-     * ("would this delta push totalParallelism below the allowed minimum?") and the update used to be
-     * two separate steps that were not atomic with respect to each other. Two concurrent callers could
-     * both read the same pre-update `totalParallelism`, both conclude the reclaim is within bounds, and
-     * both apply their delta - overshooting the limit even though each individual check looked valid.
-     *
-     * Here exactly one unit of headroom is granted, then two threads race to reclaim it with `-1`.
-     * Without a lock serializing check-and-update, both `-1` calls can occasionally succeed, which
-     * would shrink the dispatcher below its initial parallelism - something no single caller is allowed
-     * to do without a matching grant.
-     */
+    @Test
+    fun testIoLikeDispatcherAdjustParallelismByOneStartsAlreadyQueuedWork() {
+        val parallelism = 1
+        val soft = softBlockingDispatcher(parallelism)
+
+        val started = CountDownLatch(parallelism)
+        val release = CountDownLatch(1)
+        try {
+            repeat(parallelism) {
+                soft.dispatch(EmptyCoroutineContext, Runnable {
+                    started.countDown()
+                    release.await()
+                })
+            }
+            assertTrue(started.await(10, TimeUnit.SECONDS))
+
+            // No permit is free for this task, so it sits in the internal queue instead of running.
+            val queuedStarted = CountDownLatch(1)
+            soft.dispatch(EmptyCoroutineContext, Runnable { queuedStarted.countDown() })
+            assertFalse(
+                queuedStarted.await(500, TimeUnit.MILLISECONDS),
+                "sanity check: the second task should still be queued, since no permit was available for it"
+            )
+
+            assertEquals(1.toByte(), soft.tryAdjustParallelism(1), "a single unit of headroom should be granted in full")
+            // The sole worker above is still stuck on release.await() (simulating a deadlocked task), so the
+            // only way the already-queued task can start now is if adjustParallelism(1) itself kicks the queue.
+            assertTrue(
+                queuedStarted.await(1000, TimeUnit.MILLISECONDS),
+                "adjustParallelism(1) must start already-queued work -- otherwise it cannot unblock work stuck " +
+                    "behind a task that will never return on its own, defeating deadlock recovery"
+            )
+        } finally {
+            release.countDown()
+        }
+    }
+
+
     @Test
     fun testIoLikeDispatcherConcurrentAdjustParallelismNeverOverdraftsHeadroom() {
         val parallelism = 2

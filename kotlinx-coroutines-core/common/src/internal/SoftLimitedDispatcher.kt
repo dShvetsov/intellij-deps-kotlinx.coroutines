@@ -88,6 +88,10 @@ internal class SoftLimitedDispatcher(
         }
         additionalSoftParallelism += delta
         availablePermits.addAndGet(delta)
+
+        // we need to signal scheduler that new worker can be allocated and can take tasks
+        // instead of exposing signaling API, let's just dispatch empty task
+        dispatch(EmptyCoroutineContext, { } )
         return parallelismDelta
     }
 
