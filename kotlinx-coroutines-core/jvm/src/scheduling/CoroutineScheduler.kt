@@ -359,6 +359,14 @@ internal class CoroutineScheduler(
         if (outstandingCpuCompensations.compareAndSet(outstanding, outstanding - 1)) return true
     }
 
+    private fun tryDecrementBlockingTaskIfNoCpuPermitAvailable(): Boolean {
+        val state = controlState.value
+        if (availableCpuPermits(state) > 0) return false
+        assert{ blockingTasks(state) > 0 }
+        val updatedState = state - (1L shl BLOCKING_SHIFT)
+        return controlState.compareAndSet(state, updatedState)
+    }
+
     // This is used a "stop signal" for close and shutdown functions
     private val _isTerminated = atomic(false)
     val isTerminated: Boolean get() = _isTerminated.value
@@ -692,11 +700,17 @@ internal class CoroutineScheduler(
         // Blocking tasks cannot go below 0: CPU parallelism can decrease only when there
         // is an outstanding CPU compensation, so for every blocking task decrement there is
         // a matching incrementBlockingTasks() call done in [tryIncreaseCpuParallelism].
-
-        if (!tryAcquireCpuPermitAndDecrementBlockingTasks()) {
-            decrementBlockingTasks()
-            cpuDecompensationRequests.incrementAndGet()
+        while(true) {
+            if (tryAcquireCpuPermitAndDecrementBlockingTasks()) {
+                break
+            } else {
+                if (tryDecrementBlockingTaskIfNoCpuPermitAvailable()) {
+                    cpuDecompensationRequests.incrementAndGet()
+                    break
+                }
+            }
         }
+
 
         return true
     }
