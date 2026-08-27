@@ -60,17 +60,18 @@ internal class SoftLimitedDispatcher(
     private val name: String?
 ) : CoroutineDispatcher(), Delay by (dispatcher as? Delay ?: DefaultDelay), SoftLimitedParallelism {
     private val initialParallelism = parallelism
-    private val additionalSoftParallelism = atomic(0)
+    private var additionalSoftParallelism = 0
     // `parallelism limit - runningWorkers`; may be < 0 if decompensation is expected
     private val availablePermits = atomic(parallelism)
 
     private val queue = LockFreeTaskQueue<Runnable>(singleConsumer = false)
 
     private val workerAllocationLock = SynchronizedObject()
+    private val adjustmentLock = SynchronizedObject()
 
     // totalParallelism doesn't detect if parallelism was compensated for a specific thread
     private val totalParallelism
-        get() = initialParallelism + additionalSoftParallelism.value
+        inline get() = initialParallelism + additionalSoftParallelism
 
     override fun limitedParallelism(parallelism: Int, name: String?): CoroutineDispatcher {
         return super.limitedParallelism(parallelism, name)
@@ -82,18 +83,14 @@ internal class SoftLimitedDispatcher(
         return SoftLimitedDispatcher(this, parallelism, name)
     }
 
-    override fun tryAdjustParallelism(parallelismDelta: Byte): Byte {
+    override fun tryAdjustParallelism(parallelismDelta: Byte): Byte = synchronized(adjustmentLock) {
         val delta = parallelismDelta.toInt()
-        return availablePermits.loop { permits ->
-            if (totalParallelism.toLong() + delta !in 1..Int.MAX_VALUE) {
-                return 0
-            }
-            val success = availablePermits.compareAndSet(permits, permits + delta)
-            if (success) {
-                additionalSoftParallelism.addAndGet(delta)
-                return parallelismDelta
-            }
+        if (totalParallelism.toLong() + delta !in initialParallelism..Int.MAX_VALUE) {
+            return 0
         }
+        additionalSoftParallelism += delta
+        availablePermits.addAndGet(delta)
+        return parallelismDelta
     }
 
     override fun dispatch(context: CoroutineContext, block: Runnable) {
