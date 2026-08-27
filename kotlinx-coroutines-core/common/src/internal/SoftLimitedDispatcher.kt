@@ -69,10 +69,6 @@ internal class SoftLimitedDispatcher(
     private val workerAllocationLock = SynchronizedObject()
     private val adjustmentLock = SynchronizedObject()
 
-    // totalParallelism doesn't detect if parallelism was compensated for a specific thread
-    private val totalParallelism
-        inline get() = initialParallelism + additionalSoftParallelism
-
     override fun limitedParallelism(parallelism: Int, name: String?): CoroutineDispatcher {
         return super.limitedParallelism(parallelism, name)
     }
@@ -84,8 +80,10 @@ internal class SoftLimitedDispatcher(
     }
 
     override fun tryAdjustParallelism(parallelismDelta: Byte): Byte = synchronized(adjustmentLock) {
+        // totalParallelism doesn't detect if parallelism was compensated for a specific thread
         val delta = parallelismDelta.toInt()
-        if (totalParallelism.toLong() + delta !in initialParallelism..Int.MAX_VALUE) {
+        val targetTotalParallelism = initialParallelism.toLong() + additionalSoftParallelism + delta
+        if (targetTotalParallelism !in initialParallelism..Int.MAX_VALUE) {
             return 0
         }
         additionalSoftParallelism += delta
