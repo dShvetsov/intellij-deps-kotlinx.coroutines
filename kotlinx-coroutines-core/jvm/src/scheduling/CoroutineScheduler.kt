@@ -333,7 +333,8 @@ internal class CoroutineScheduler(
     private inline fun tryAcquireCpuPermitAndDecrementBlockingTasks(): Boolean = controlState.loop { state ->
         val available = availableCpuPermits(state)
         if (available == 0) return false
-        if (blockingTasks(state) == 0) return false
+        assert{ blockingTasks(state) > 0 } // Catch issues easier during tests
+        if (blockingTasks(state) == 0) return false // But avoid invalid states during runtime
         val update = state - (1L shl CPU_PERMITS_SHIFT) - (1L shl BLOCKING_SHIFT)
         if (controlState.compareAndSet(state, update)) return true
     }
@@ -353,7 +354,8 @@ internal class CoroutineScheduler(
     private fun tryDecrementBlockingTaskIfNoCpuPermitAvailable(): Boolean {
         val state = controlState.value
         if (availableCpuPermits(state) > 0) return false
-        if (blockingTasks(state) == 0) return false
+        assert{ blockingTasks(state) > 0 } // Catch issues easier during tests
+        if (blockingTasks(state) == 0) return false // But avoid invalid states during runtime
         val updatedState = state - (1L shl BLOCKING_SHIFT)
         return controlState.compareAndSet(state, updatedState)
     }
@@ -847,7 +849,6 @@ internal class CoroutineScheduler(
             if (decompensationRequests == 0) {
                 return false
             }
-
             assert { state == WorkerState.CPU_ACQUIRED }
             while (decompensationRequests > 0) {
                 if (!cpuDecompensationRequests.compareAndSet(decompensationRequests, decompensationRequests - 1)) {
