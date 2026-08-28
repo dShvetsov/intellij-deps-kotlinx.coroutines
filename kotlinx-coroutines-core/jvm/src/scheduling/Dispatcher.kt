@@ -63,7 +63,7 @@ private object UnlimitedIoScheduler : CoroutineDispatcher(), SoftLimitedParallel
         return SoftLimitedDispatcher(this, parallelism, name)
     }
 
-    override fun tryAdjustParallelism(parallelismDelta: Byte): Byte {
+    override fun tryAdjustParallelism(parallelismDelta: Int): Int {
         // Do nothing, because it is unlimited
         return 0
     }
@@ -109,7 +109,7 @@ internal object DefaultIoScheduler : ExecutorCoroutineDispatcher(), Executor, So
 
     override fun toString(): String = "Dispatchers.IO"
 
-    override fun tryAdjustParallelism(parallelismDelta: Byte): Byte {
+    override fun tryAdjustParallelism(parallelismDelta: Int): Int {
         return default.tryAdjustParallelism(parallelismDelta)
     }
 }
@@ -176,20 +176,19 @@ internal open class SchedulerCoroutineDispatcher(
         return SoftLimitedDispatcher(this, parallelism, name)
     }
 
-    override fun tryAdjustParallelism(parallelismDelta: Byte): Byte {
-        fun Boolean.toByte() = if (this) 1 else 0
+    override fun tryAdjustParallelism(parallelismDelta: Int): Int {
+        fun Boolean.toInt() = if (this) 1 else 0
 
-        val delta = parallelismDelta.toInt()
-        if (delta > 0) {
-            return (1..delta).sumOf {
-                coroutineScheduler.tryIncreaseCpuParallelism().toByte()
-            }.toByte()
-        }
-        if (delta < 0) {
-            val successfulAdjustments = (1..-delta).sumOf {
-                coroutineScheduler.tryDecreaseCpuParallelism().toByte()
+        if (parallelismDelta > 0) {
+            return (1..parallelismDelta).sumOf {
+                coroutineScheduler.tryIncreaseCpuParallelism().toInt()
             }
-            return (-successfulAdjustments).toByte()
+        }
+        if (parallelismDelta < 0) {
+            val successfulAdjustments = (1..-parallelismDelta).sumOf {
+                coroutineScheduler.tryDecreaseCpuParallelism().toInt()
+            }
+            return -successfulAdjustments
         }
         return 0
     }

@@ -37,7 +37,7 @@ internal class NamedSoftParallelismDispatcher<D>(
         return SoftLimitedDispatcher(this, parallelism, name)
     }
 
-    override fun tryAdjustParallelism(parallelismDelta: Byte): Byte {
+    override fun tryAdjustParallelism(parallelismDelta: Int): Int {
         return dispatcher.tryAdjustParallelism(parallelismDelta)
     }
 }

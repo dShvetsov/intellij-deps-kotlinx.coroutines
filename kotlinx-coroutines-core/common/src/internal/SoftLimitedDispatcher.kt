@@ -24,7 +24,7 @@ internal interface SoftLimitedParallelism {
      * @param parallelismDelta a positive or negative value; it is recommended to use +1 and -1.
      * @return the actual adjustment that was made.
      */
-    fun tryAdjustParallelism(parallelismDelta: Byte): Byte
+    fun tryAdjustParallelism(parallelismDelta: Int): Int
 }
 
 /**
@@ -38,7 +38,7 @@ internal fun CoroutineDispatcher.softLimitedParallelism(parallelism: Int, name: 
     throw UnsupportedOperationException("CoroutineDispatcher.softLimitedParallelism cannot be applied to $this")
 }
 
-internal fun CoroutineDispatcher.tryAdjustParallelism(parallelismDelta: Byte): Byte {
+internal fun CoroutineDispatcher.tryAdjustParallelism(parallelismDelta: Int): Int {
     if (this is SoftLimitedParallelism) {
         return this.tryAdjustParallelism(parallelismDelta)
     }
@@ -79,15 +79,14 @@ internal class SoftLimitedDispatcher(
         return SoftLimitedDispatcher(this, parallelism, name)
     }
 
-    override fun tryAdjustParallelism(parallelismDelta: Byte): Byte = synchronized(adjustmentLock) {
+    override fun tryAdjustParallelism(parallelismDelta: Int): Int = synchronized(adjustmentLock) {
         // totalParallelism doesn't detect if parallelism was compensated for a specific thread
-        val delta = parallelismDelta.toInt()
-        val targetTotalParallelism = initialParallelism.toLong() + additionalSoftParallelism + delta
+        val targetTotalParallelism = initialParallelism.toLong() + additionalSoftParallelism + parallelismDelta
         if (targetTotalParallelism !in initialParallelism..Int.MAX_VALUE) {
             return 0
         }
-        additionalSoftParallelism += delta
-        availablePermits.addAndGet(delta)
+        additionalSoftParallelism += parallelismDelta
+        availablePermits.addAndGet(parallelismDelta)
 
         // we need to signal scheduler that new worker can be allocated and can take tasks
         // instead of exposing signaling API, let's just dispatch empty task

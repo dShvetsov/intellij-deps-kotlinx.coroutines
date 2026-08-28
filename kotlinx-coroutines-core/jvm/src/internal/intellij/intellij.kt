@@ -76,7 +76,7 @@ public object IntellijCoroutines {
      * @return the actual adjustment that was made, which is not guaranteed to be equal to [parallelismDelta]:
      * the adjustment may be applied only partially, or not at all (in which case `0` is returned).
      */
-    public fun CoroutineDispatcher.tryAdjustParallelism(parallelismDelta: Byte): Byte {
+    public fun CoroutineDispatcher.tryAdjustParallelism(parallelismDelta: Int): Int {
         return tryAdjustParallelismImpl(parallelismDelta)
     }
 

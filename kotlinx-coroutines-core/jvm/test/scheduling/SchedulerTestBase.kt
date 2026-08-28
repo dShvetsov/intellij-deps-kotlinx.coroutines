@@ -140,7 +140,7 @@ internal fun SchedulerCoroutineDispatcher.softBlocking(parallelism: Int = 16): C
             return this@softBlocking.softLimitedParallelism(parallelism, name)
         }
 
-        override fun tryAdjustParallelism(parallelismDelta: Byte): Byte {
+        override fun tryAdjustParallelism(parallelismDelta: Int): Int {
             return this@softBlocking.tryAdjustParallelism(parallelismDelta)
         }
     }.softLimitedParallelism(parallelism, null)
