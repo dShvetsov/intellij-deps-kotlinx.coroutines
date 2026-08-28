@@ -90,7 +90,9 @@ internal class SoftLimitedDispatcher(
 
         // we need to signal scheduler that new worker can be allocated and can take tasks
         // instead of exposing signaling API, let's just dispatch empty task
-        dispatch(EmptyCoroutineContext, { } )
+        repeat(parallelismDelta.coerceIn(0, queue.size)) {
+            dispatch(EmptyCoroutineContext, { } )
+        }
         return parallelismDelta
     }
 

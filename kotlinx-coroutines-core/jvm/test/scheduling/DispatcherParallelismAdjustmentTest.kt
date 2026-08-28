@@ -178,6 +178,54 @@ class DispatcherParallelismAdjustmentTest : SchedulerTestBase() {
         }
     }
 
+    @Test
+    fun testBatchSoftIncreaseStartsEveryRequiredQueuedWorker() {
+        val soft = softBlockingDispatcher(parallelism = 1)
+
+        val originalStarted = CountDownLatch(1)
+        val releaseOriginal = CountDownLatch(1)
+
+        val queuedStarted = CountDownLatch(2)
+        val releaseQueued = CountDownLatch(1)
+
+        try {
+            soft.dispatch(
+                EmptyCoroutineContext,
+                Runnable {
+                    originalStarted.countDown()
+                    releaseOriginal.await()
+                }
+            )
+
+            assertTrue(
+                originalStarted.await(10, TimeUnit.SECONDS)
+            )
+
+            repeat(2) {
+                soft.dispatch(
+                    EmptyCoroutineContext,
+                    Runnable {
+                        queuedStarted.countDown()
+                        releaseQueued.await()
+                    }
+                )
+            }
+
+            assertEquals(
+                2,
+                soft.tryAdjustParallelism(2)
+            )
+
+            assertTrue(
+                queuedStarted.await(2, TimeUnit.SECONDS),
+                "A +2 adjustment must start two queued workers. " +
+                    "Starting only one may leave a dependency cycle deadlocked."
+            )
+        } finally {
+            releaseOriginal.countDown()
+            releaseQueued.countDown()
+        }
+    }
 
     @Test
     fun testIoLikeDispatcherConcurrentAdjustParallelismNeverOverdraftsHeadroom() {
