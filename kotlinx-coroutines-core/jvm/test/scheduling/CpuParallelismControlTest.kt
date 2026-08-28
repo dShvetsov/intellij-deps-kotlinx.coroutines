@@ -234,4 +234,25 @@ class CpuParallelismControlTest : TestBase() {
             )
         }
     }
+
+    @Test
+    fun testCpuPermitCounterDoesNotOverflowAtPackedFieldBoundary() {
+        val corePoolSize = CoroutineScheduler.MAX_SUPPORTED_POOL_SIZE
+
+        CoroutineScheduler(
+            corePoolSize = corePoolSize,
+            maxPoolSize = corePoolSize,
+            schedulerName = "PackedCounterOverflow"
+        ).use { scheduler ->
+            assertEquals(
+                corePoolSize,
+                scheduler.availableCpuPermitsSnapshot()
+            )
+
+            assertFalse(
+                scheduler.tryIncreaseCpuParallelism(),
+                "An increase that can overflow the packed CPU-permit field must be rejected"
+            )
+        }
+    }
 }
