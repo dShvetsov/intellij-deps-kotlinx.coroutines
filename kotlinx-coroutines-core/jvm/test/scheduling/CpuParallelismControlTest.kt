@@ -171,7 +171,7 @@ class CpuParallelismControlTest : TestBase() {
     @Test
     fun testIncreaseCpuParallelismCannotExceedMaxOutstandingCompensations() {
         val corePoolSize = 1
-        val maxPoolSize = CoroutineScheduler.MAX_SUPPORTED_POOL_SIZE - MAX_OUTSTANDING_CPU_COMPENSATIONS - 20
+        val maxPoolSize = CoroutineScheduler.MAX_SUPPORTED_POOL_SIZE
         CoroutineScheduler(corePoolSize, maxPoolSize, schedulerName = "MaxOutstandingCompensations").use { scheduler ->
             repeat(MAX_OUTSTANDING_CPU_COMPENSATIONS) {
                 assertTrue(

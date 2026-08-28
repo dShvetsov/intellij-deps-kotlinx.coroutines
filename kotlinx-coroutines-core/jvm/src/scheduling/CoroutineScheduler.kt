@@ -657,10 +657,7 @@ internal class CoroutineScheduler(
     fun tryIncreaseCpuParallelism(): Boolean = synchronized(compensationLock) {
         if (isTerminated) return false
 
-        // Disable adjustment in extreme cases where corePoolSize or maxPoolSize are large enough to risk overflow
-        if (corePoolSize + MAX_OUTSTANDING_CPU_COMPENSATIONS > MAX_SUPPORTED_POOL_SIZE ||
-            maxPoolSize + MAX_OUTSTANDING_CPU_COMPENSATIONS > MAX_SUPPORTED_POOL_SIZE ||
-            outstandingCpuCompensations >= MAX_OUTSTANDING_CPU_COMPENSATIONS ||
+        if (outstandingCpuCompensations >= MAX_OUTSTANDING_CPU_COMPENSATIONS ||
             outstandingCpuCompensations >= maxPoolSize - corePoolSize) {
             return false
         }
