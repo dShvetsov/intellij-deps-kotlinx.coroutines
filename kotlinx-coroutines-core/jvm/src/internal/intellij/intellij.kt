@@ -68,13 +68,14 @@ public object IntellijCoroutines {
      * Adjusts the parallelism of [this] dispatcher by [parallelismDelta].
      *
      * This extension can only be used on instances of [Dispatchers.Default], [Dispatchers.IO] and also on what
-     * [softLimitedParallelism] has returned. Throws [UnsupportedOperationException] if [this] does not support
-     * the parallelism adjustment mechanism.
+     * [softLimitedParallelism] has returned.  The parallelism can not be decreased below the initial value.
+     * The method does the best effort to adjust parallelism, the actual applied value can be less (or 0) than
+     * requested. Throws [UnsupportedOperationException] if [this] does not support the parallelism adjustment
+     * mechanism.
      *
      * @param parallelismDelta a positive or negative adjustment to the parallelism limit;
      *        a negative value reclaims previously granted parallelism.
-     * @return the actual adjustment that was made, which is not guaranteed to be equal to [parallelismDelta]:
-     * the adjustment may be applied only partially, or not at all (in which case `0` is returned).
+     * @return the actual adjustment that was made.
      */
     public fun CoroutineDispatcher.tryAdjustParallelism(parallelismDelta: Int): Int {
         return tryAdjustParallelismImpl(parallelismDelta)

@@ -52,12 +52,32 @@ exceeding the parallelism limit would eliminate this (likely expected) side effe
 which results in a deadlock when there are no threads in a limited-thread dispatcher that are able to cancel the cancelling coroutines.
 We provide a user-visible function for parallelism compensation for arbitrary blocking operation.
 
+### Parallelism adjustment
+
+In addition to the compensation mechanism triggered automatically by `runBlockingWithParallelismCompensation`, it is
+sometimes necessary for a caller to directly adjust the parallelism limit of a dispatcher, for example, when pool is
+starved, it can be detected by external thread or coroutine, and it can temporarily increase parallelism limit.
+
+`tryAdjustParallelism` is a best-effort operation: it attempts to shift the effective parallelism limit by
+`parallelismDelta` (positive to increase, negative to decrease), but the actual adjustment applied may be less than
+requested, or zero. The function returns the actual delta that was applied.
+
+**Constraints for `Default` dispatcher:**
+- The parallelism limit cannot be decreased below the dispatcher's initial `corePoolSize`.
+- The number of outstanding increases is bounded by `MAX_OUTSTANDING_CPU_COMPENSATIONS` (configurable via a system
+  property). Attempts to exceed this bound return `0`.
+- Outstanding increases are automatically reclaimed on scheduler shutdown.
+
+**Constraints for `IO` dispatcher:**
+- The parallelism can not be decreased below the initial value
+
 ### API
 - `runBlockingWithParallelismCompensation` - an analogue of `runBlocking` which also compensates parallelism of the
   associated coroutine dispatcher when it decides to park the thread
 - `CoroutineDispatcher.softLimitedParallelism` – an analogue of `.limitedParallelism` which supports
   parallelism compensation
 - `runAndCompensateParallelism` - a wrapper for an arbitrary blocking operation that initiates parallelism compensation after deadline.
+- `CoroutineDispatcher.tryAdjustParallelism` - a method that allows to change parallelism limit for the dispatcher
 
 ## Asynchronous stack traces for flows in the IDEA debugger
 
