@@ -648,11 +648,11 @@ internal class CoroutineScheduler(
      * The amount of compensated threads cannot exceed [MAX_OUTSTANDING_CPU_COMPENSATIONS].
      *
      * The CPU compensation mechanism is part of the IntelliJ patch and has not been tested for
-     * all corner cases, such as [corePoolSize] == [MAX_SUPPORTED_POOL_SIZE], where an integer overflow
+     * all corner cases, such as [MAX_SUPPORTED_POOL_SIZE] parallel blocking task running, where an integer overflow
      * is possible.
      *
      * @return `true` if the parallelism was increased, `false` if the scheduler is already terminated or
-     * [MAX_OUTSTANDING_CPU_COMPENSATIONS] has already been reached.
+     * [MAX_OUTSTANDING_CPU_COMPENSATIONS] or [maxPoolSize] has already been reached.
      */
     fun tryIncreaseCpuParallelism(): Boolean = synchronized(compensationLock) {
         if (isTerminated) return false
