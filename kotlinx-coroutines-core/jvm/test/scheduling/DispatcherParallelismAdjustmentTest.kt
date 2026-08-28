@@ -98,7 +98,7 @@ class DispatcherParallelismAdjustmentTest : SchedulerTestBase() {
         val increased = dispatcher.tryAdjustParallelism(Int.MAX_VALUE)
 
         assertEquals(
-            MAX_OUTSTANDING_CPU_COMPENSATIONS,
+            maxPoolSize - corePoolSize,
             increased,
             "Int.MAX_VALUE should apply adjustments until the first failure"
         )

@@ -36,7 +36,7 @@ class CpuParallelismControlTest : TestBase() {
     @Test
     fun testIncreaseCpuParallelismCreatesWorkerFromZero() {
         val corePoolSize = 1
-        CoroutineScheduler(corePoolSize, corePoolSize, schedulerName = "IncreaseFromZero").use { scheduler ->
+        CoroutineScheduler(corePoolSize, corePoolSize * 5, schedulerName = "IncreaseFromZero").use { scheduler ->
             assertEquals(0, scheduler.createdWorkersSnapshot())
             assertEquals(corePoolSize, scheduler.availableCpuPermitsSnapshot())
 
@@ -68,7 +68,7 @@ class CpuParallelismControlTest : TestBase() {
     @Test
     fun testIncreaseCpuParallelismWhenAllPermitsHeld() {
         val corePoolSize = 2
-        CoroutineScheduler(corePoolSize, corePoolSize, schedulerName = "IncreaseAllHeld").use { scheduler ->
+        CoroutineScheduler(corePoolSize, corePoolSize * 2, schedulerName = "IncreaseAllHeld").use { scheduler ->
             assertEquals(corePoolSize, scheduler.availableCpuPermitsSnapshot())
 
             val started = CountDownLatch(corePoolSize)
@@ -79,17 +79,20 @@ class CpuParallelismControlTest : TestBase() {
                     release.await()
                 })
             }
-            assertTrue(started.await(10, TimeUnit.SECONDS))
-            awaitCondition { scheduler.availableCpuPermitsSnapshot() == 0 }
+            try {
+                assertTrue(started.await(10, TimeUnit.SECONDS))
+                awaitCondition { scheduler.availableCpuPermitsSnapshot() == 0 }
 
-            assertTrue(scheduler.tryIncreaseCpuParallelism())
-            awaitCondition { scheduler.availableCpuPermitsSnapshot() == 1 }
+                assertTrue(scheduler.tryIncreaseCpuParallelism())
+                awaitCondition { scheduler.availableCpuPermitsSnapshot() == 1 }
 
-            // Prove the increase is a real, reclaimable credit (not just a transient bump): a matching
-            // decrease consumes it, and once the busy workers finish, the pool settles exactly back at
-            // corePoolSize rather than corePoolSize + 1.
-            assertTrue(scheduler.tryDecreaseCpuParallelism())
-            release.countDown()
+                // Prove the increase is a real, reclaimable credit (not just a transient bump): a matching
+                // decrease consumes it, and once the busy workers finish, the pool settles exactly back at
+                // corePoolSize rather than corePoolSize + 1.
+                assertTrue(scheduler.tryDecreaseCpuParallelism())
+            } finally {
+                release.countDown()
+            }
 
             awaitCondition { scheduler.availableCpuPermitsSnapshot() == corePoolSize }
         }
@@ -98,7 +101,8 @@ class CpuParallelismControlTest : TestBase() {
     @Test
     fun testIncreaseThenDecreaseCpuParallelismRoundTrip() {
         val corePoolSize = 2
-        CoroutineScheduler(corePoolSize, corePoolSize, schedulerName = "RoundTrip").use { scheduler ->
+        val maxPoolSize = 20
+        CoroutineScheduler(corePoolSize, maxPoolSize, schedulerName = "RoundTrip").use { scheduler ->
             assertEquals(corePoolSize, scheduler.availableCpuPermitsSnapshot())
 
             val n = 3
@@ -147,7 +151,7 @@ class CpuParallelismControlTest : TestBase() {
     @Test
     fun testDecreaseCpuParallelismInPlaceWhenPermitIsFree() {
         val corePoolSize = 2
-        CoroutineScheduler(corePoolSize, corePoolSize, schedulerName = "DecreaseInPlace").use { scheduler ->
+        CoroutineScheduler(corePoolSize, corePoolSize * 5, schedulerName = "DecreaseInPlace").use { scheduler ->
             assertEquals(corePoolSize, scheduler.availableCpuPermitsSnapshot())
 
             // Nothing is using the pool, so the permit increaseCpuParallelism() grants here is
@@ -167,7 +171,8 @@ class CpuParallelismControlTest : TestBase() {
     @Test
     fun testIncreaseCpuParallelismCannotExceedMaxOutstandingCompensations() {
         val corePoolSize = 1
-        CoroutineScheduler(corePoolSize, corePoolSize, schedulerName = "MaxOutstandingCompensations").use { scheduler ->
+        val maxPoolSize = CoroutineScheduler.MAX_SUPPORTED_POOL_SIZE - MAX_OUTSTANDING_CPU_COMPENSATIONS - 20
+        CoroutineScheduler(corePoolSize, maxPoolSize, schedulerName = "MaxOutstandingCompensations").use { scheduler ->
             repeat(MAX_OUTSTANDING_CPU_COMPENSATIONS) {
                 assertTrue(
                     scheduler.tryIncreaseCpuParallelism(),
@@ -218,7 +223,7 @@ class CpuParallelismControlTest : TestBase() {
     @Test
     fun testShutdownWithUnclaimedOutstandingCompensationDoesNotHang() {
         val corePoolSize = 2
-        CoroutineScheduler(corePoolSize, corePoolSize, schedulerName = "ShutdownUnclaimed").use { scheduler ->
+        CoroutineScheduler(corePoolSize, corePoolSize * 2, schedulerName = "ShutdownUnclaimed").use { scheduler ->
             // Leaves outstandingCpuCompensations == 1 with nobody ever having claimed the extra
             // permit -- shutdown() must drain this itself before its availableCpuPermits ==
             // corePoolSize assertion, via decreaseCpuParallelism().
@@ -252,6 +257,44 @@ class CpuParallelismControlTest : TestBase() {
             assertFalse(
                 scheduler.tryIncreaseCpuParallelism(),
                 "An increase that can overflow the packed CPU-permit field must be rejected"
+            )
+        }
+    }
+
+    @Test
+    fun testIncreaseCannotExceedMaxPoolSize() {
+        val corePoolSize = 2
+        val maxPoolSize = 4
+
+        CoroutineScheduler(
+            corePoolSize = corePoolSize,
+            maxPoolSize = maxPoolSize,
+            schedulerName = "MaximumCpuParallelism"
+        ).use { scheduler ->
+            val availableHeadroom =
+                maxPoolSize - corePoolSize
+
+            repeat(availableHeadroom) {
+                assertTrue(
+                    scheduler.tryIncreaseCpuParallelism(),
+                    "Increase #$it should fit within maxPoolSize"
+                )
+            }
+
+            assertFalse(
+                scheduler.tryIncreaseCpuParallelism(),
+                "The logical CPU parallelism must not exceed maxPoolSize"
+            )
+
+            repeat(availableHeadroom) {
+                assertTrue(
+                    scheduler.tryDecreaseCpuParallelism()
+                )
+            }
+
+            assertFalse(
+                scheduler.tryDecreaseCpuParallelism(),
+                "All outstanding increases should be reclaimed"
             )
         }
     }
