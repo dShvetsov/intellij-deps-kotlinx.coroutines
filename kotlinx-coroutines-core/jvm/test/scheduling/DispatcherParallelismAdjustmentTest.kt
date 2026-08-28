@@ -90,6 +90,34 @@ class DispatcherParallelismAdjustmentTest : SchedulerTestBase() {
         }
     }
 
+    @Test(timeout = 5_000L)
+    fun testDefaultLikeDispatcherHandlesExtremeAdjustmentsPromptly() {
+        corePoolSize = 1
+        maxPoolSize = 64
+
+        val increased = dispatcher.tryAdjustParallelism(Int.MAX_VALUE)
+
+        assertEquals(
+            MAX_OUTSTANDING_CPU_COMPENSATIONS,
+            increased,
+            "Int.MAX_VALUE should apply adjustments until the first failure"
+        )
+
+        val decreased = dispatcher.tryAdjustParallelism(Int.MIN_VALUE)
+
+        assertEquals(
+            -increased,
+            decreased,
+            "Int.MIN_VALUE should reclaim all available adjustments and stop at the first failure"
+        )
+
+        assertEquals(
+            0,
+            dispatcher.tryAdjustParallelism(-1),
+            "All outstanding adjustments should already be reclaimed"
+        )
+    }
+
     @Test
     fun testIoLikeDispatcherAdjustParallelismByOneLetsExtraTaskRunConcurrently() {
         val parallelism = 2

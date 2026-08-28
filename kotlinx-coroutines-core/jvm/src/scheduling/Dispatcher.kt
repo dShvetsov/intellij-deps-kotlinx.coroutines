@@ -176,18 +176,28 @@ internal open class SchedulerCoroutineDispatcher(
         return SoftLimitedDispatcher(this, parallelism, name)
     }
 
+
     override fun tryAdjustParallelism(parallelismDelta: Int): Int {
-        fun Boolean.toInt() = if (this) 1 else 0
+        // Stop adjustment after first failed adjustment
+        fun repeatWhileTrue(times: Int, adjustment: () -> Boolean): Int {
+            var applied = 0
+            while (applied < times) {
+                if (!adjustment()) break
+                applied++
+            }
+            return applied
+        }
 
         if (parallelismDelta > 0) {
-            return (1..parallelismDelta).sumOf {
-                coroutineScheduler.tryIncreaseCpuParallelism().toInt()
-            }
+            return repeatWhileTrue(parallelismDelta, {
+                coroutineScheduler.tryIncreaseCpuParallelism()
+            })
         }
         if (parallelismDelta < 0) {
-            val successfulAdjustments = (1..-parallelismDelta).sumOf {
-                coroutineScheduler.tryDecreaseCpuParallelism().toInt()
-            }
+            val successfulAdjustments = repeatWhileTrue(
+                -parallelismDelta.coerceAtLeast(Int.MIN_VALUE + 1),
+                { coroutineScheduler.tryDecreaseCpuParallelism() }
+            )
             return -successfulAdjustments
         }
         return 0
