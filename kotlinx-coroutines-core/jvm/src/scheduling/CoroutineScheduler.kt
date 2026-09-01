@@ -402,7 +402,7 @@ internal class CoroutineScheduler(
         synchronized(compensationLock) {
             while (outstandingCpuCompensations > 0) {
                 val decreased = tryDecreaseCpuParallelism()
-                assert(decreased)
+                assert { decreased }
             }
         }
 
