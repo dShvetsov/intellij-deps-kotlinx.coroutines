@@ -186,8 +186,7 @@ internal class SoftLimitedDispatcher(
         }
 
         override fun increaseParallelismAndLimit() {
-            val newTask =
-                obtainTaskOrDeallocateWorker() // either increases the number of permits or we launch a new worker (which holds a permit)
+            val newTask = obtainTaskOrDeallocateWorker() // either increases the number of permits or we launch a new worker (which holds a permit)
             if (newTask != null) {
                 dispatcher.safeDispatch(this@SoftLimitedDispatcher, Worker(newTask))
             }
