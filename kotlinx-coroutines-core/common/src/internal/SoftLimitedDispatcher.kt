@@ -81,20 +81,22 @@ internal class SoftLimitedDispatcher(
 
     override fun tryAdjustParallelism(parallelismDelta: Int): Int = synchronized(adjustmentLock) {
         // totalParallelism doesn't detect if parallelism was compensated for a specific thread
-        val targetTotalParallelism = initialParallelism.toLong() + additionalSoftParallelism + parallelismDelta
-        if (targetTotalParallelism !in initialParallelism..Int.MAX_VALUE) {
+        val targetTotalParallelism = (initialParallelism.toLong() + additionalSoftParallelism + parallelismDelta)
+            .coerceIn(initialParallelism.toLong(), Int.MAX_VALUE.toLong())
+        val actualDelta = (targetTotalParallelism - initialParallelism - additionalSoftParallelism).toInt()
+        if (actualDelta == 0) {
             return 0
         }
-        additionalSoftParallelism += parallelismDelta
-        availablePermits.addAndGet(parallelismDelta)
+        additionalSoftParallelism += actualDelta
+        availablePermits.addAndGet(actualDelta)
 
         // we need to signal scheduler that new worker can be allocated and can take tasks
         // instead of exposing signaling API, let's just dispatch empty task
         // It doesn't make sense to wake up more workers than there is tasks in queue
-        repeat(parallelismDelta.coerceIn(0, queue.size)) {
+        repeat(actualDelta.coerceIn(0, queue.size)) {
             dispatch(EmptyCoroutineContext, { } )
         }
-        return parallelismDelta
+        return actualDelta
     }
 
     override fun dispatch(context: CoroutineContext, block: Runnable) {
