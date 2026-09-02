@@ -55,12 +55,11 @@ internal fun CoroutineDispatcher.tryAdjustParallelism(parallelismDelta: Int): In
  * dispatcher that mostly behaves as limited, but can temporarily increase parallelism if necessary.
  */
 internal class SoftLimitedDispatcher(
-    private val dispatcher: CoroutineDispatcher,
-    parallelism: Int,
-    private val name: String?
+    private val dispatcher: CoroutineDispatcher, parallelism: Int, private val name: String?
 ) : CoroutineDispatcher(), Delay by (dispatcher as? Delay ?: DefaultDelay), SoftLimitedParallelism {
     private val initialParallelism = parallelism
     private var additionalSoftParallelism = 0
+
     // `parallelism limit - runningWorkers`; may be < 0 if decompensation is expected
     private val availablePermits = atomic(parallelism)
 
@@ -81,8 +80,11 @@ internal class SoftLimitedDispatcher(
 
     override fun tryAdjustParallelism(parallelismDelta: Int): Int = synchronized(adjustmentLock) {
         // totalParallelism doesn't detect if parallelism was compensated for a specific thread
-        val targetTotalParallelism = (initialParallelism.toLong() + additionalSoftParallelism + parallelismDelta)
-            .coerceIn(initialParallelism.toLong(), Int.MAX_VALUE.toLong())
+        val targetTotalParallelism =
+            (initialParallelism.toLong() + additionalSoftParallelism + parallelismDelta).coerceIn(
+                    initialParallelism.toLong(),
+                    Int.MAX_VALUE.toLong()
+                )
         val actualDelta = (targetTotalParallelism - initialParallelism - additionalSoftParallelism).toInt()
         if (actualDelta == 0) {
             return 0
@@ -94,7 +96,7 @@ internal class SoftLimitedDispatcher(
         // instead of exposing signaling API, let's just dispatch empty task
         // It doesn't make sense to wake up more workers than there is tasks in queue
         repeat(actualDelta.coerceIn(0, queue.size)) {
-            dispatch(EmptyCoroutineContext, { } )
+            dispatch(EmptyCoroutineContext, { })
         }
         return actualDelta
     }
@@ -152,6 +154,7 @@ internal class SoftLimitedDispatcher(
                     if (queue.size == 0) return null
                     availablePermits.decrementAndGet()
                 }
+
                 else -> return nextTask
             }
         }
@@ -183,7 +186,8 @@ internal class SoftLimitedDispatcher(
         }
 
         override fun increaseParallelismAndLimit() {
-            val newTask = obtainTaskOrDeallocateWorker() // either increases the number of permits or we launch a new worker (which holds a permit)
+            val newTask =
+                obtainTaskOrDeallocateWorker() // either increases the number of permits or we launch a new worker (which holds a permit)
             if (newTask != null) {
                 dispatcher.safeDispatch(this@SoftLimitedDispatcher, Worker(newTask))
             }

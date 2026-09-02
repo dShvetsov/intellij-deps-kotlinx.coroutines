@@ -34,9 +34,7 @@ class DispatcherParallelismAdjustmentTest : SchedulerTestBase() {
             // release), so this extra task can only start if adjustParallelism(1) genuinely grants a
             // new permit.
             assertEquals(
-                1,
-                dispatcher.tryAdjustParallelism(1),
-                "a single unit of headroom should be granted in full"
+                1, dispatcher.tryAdjustParallelism(1), "a single unit of headroom should be granted in full"
             )
             val extraStarted = CountDownLatch(1)
             dispatcher.dispatch(EmptyCoroutineContext, Runnable { extraStarted.countDown() })
@@ -61,8 +59,16 @@ class DispatcherParallelismAdjustmentTest : SchedulerTestBase() {
         maxPoolSize = 64
         // tryAdjustParallelism(delta) increments/decrements one unit at a time internally; make sure it
         // does so exactly `delta` times rather than off by one in either direction.
-        assertEquals(3, dispatcher.tryAdjustParallelism(3), "adjustParallelism(3) should grant exactly 3 extra units of parallelism")
-        assertEquals(-3, dispatcher.tryAdjustParallelism(-3), "adjustParallelism(-3) should reclaim exactly the 3 units granted above")
+        assertEquals(
+            3,
+            dispatcher.tryAdjustParallelism(3),
+            "adjustParallelism(3) should grant exactly 3 extra units of parallelism"
+        )
+        assertEquals(
+            -3,
+            dispatcher.tryAdjustParallelism(-3),
+            "adjustParallelism(-3) should reclaim exactly the 3 units granted above"
+        )
     }
 
     @Test
@@ -70,7 +76,11 @@ class DispatcherParallelismAdjustmentTest : SchedulerTestBase() {
         corePoolSize = 2
         // No matching adjustParallelism(1) beforehand -> zero legitimate headroom, so this must not
         // shrink the pool below corePoolSize.
-        assertEquals(0, dispatcher.tryAdjustParallelism(-1), "there is no outstanding compensation to reclaim, so nothing should be adjusted")
+        assertEquals(
+            0,
+            dispatcher.tryAdjustParallelism(-1),
+            "there is no outstanding compensation to reclaim, so nothing should be adjusted"
+        )
 
         val started = CountDownLatch(corePoolSize)
         val release = CountDownLatch(1)
@@ -98,9 +108,7 @@ class DispatcherParallelismAdjustmentTest : SchedulerTestBase() {
         val increased = dispatcher.tryAdjustParallelism(Int.MAX_VALUE)
 
         assertEquals(
-            maxPoolSize - corePoolSize,
-            increased,
-            "Int.MAX_VALUE should apply adjustments until the first failure"
+            maxPoolSize - corePoolSize, increased, "Int.MAX_VALUE should apply adjustments until the first failure"
         )
 
         val decreased = dispatcher.tryAdjustParallelism(Int.MIN_VALUE)
@@ -112,9 +120,7 @@ class DispatcherParallelismAdjustmentTest : SchedulerTestBase() {
         )
 
         assertEquals(
-            0,
-            dispatcher.tryAdjustParallelism(-1),
-            "All outstanding adjustments should already be reclaimed"
+            0, dispatcher.tryAdjustParallelism(-1), "All outstanding adjustments should already be reclaimed"
         )
     }
 
@@ -141,7 +147,9 @@ class DispatcherParallelismAdjustmentTest : SchedulerTestBase() {
             "adjustParallelism(1) should let one extra task run concurrently on the soft-limited view"
         )
 
-        assertEquals(-1, soft.tryAdjustParallelism(-1), "the previously granted unit of headroom should be reclaimed in full")
+        assertEquals(
+            -1, soft.tryAdjustParallelism(-1), "the previously granted unit of headroom should be reclaimed in full"
+        )
         release.countDown()
     }
 
@@ -152,7 +160,9 @@ class DispatcherParallelismAdjustmentTest : SchedulerTestBase() {
 
         // A soft-limited view must never drop below its initial parallelism on its own: there is no
         // outstanding compensation to reclaim, so this must be a no-op.
-        assertEquals(0, soft.tryAdjustParallelism(-1), "a soft-limited view must not shrink below its initial parallelism")
+        assertEquals(
+            0, soft.tryAdjustParallelism(-1), "a soft-limited view must not shrink below its initial parallelism"
+        )
 
         val started = CountDownLatch(parallelism)
         val release = CountDownLatch(1)
@@ -198,8 +208,7 @@ class DispatcherParallelismAdjustmentTest : SchedulerTestBase() {
             // only way the already-queued task can start now is if adjustParallelism(1) itself kicks the queue.
             assertTrue(
                 queuedStarted.await(1000, TimeUnit.MILLISECONDS),
-                "adjustParallelism(1) must start already-queued work -- otherwise it cannot unblock work stuck " +
-                    "behind a task that will never return on its own, defeating deadlock recovery"
+                "adjustParallelism(1) must start already-queued work -- otherwise it cannot unblock work stuck " + "behind a task that will never return on its own, defeating deadlock recovery"
             )
         } finally {
             release.countDown()
@@ -218,12 +227,10 @@ class DispatcherParallelismAdjustmentTest : SchedulerTestBase() {
 
         try {
             soft.dispatch(
-                EmptyCoroutineContext,
-                Runnable {
+                EmptyCoroutineContext, Runnable {
                     originalStarted.countDown()
                     releaseOriginal.await()
-                }
-            )
+                })
 
             assertTrue(
                 originalStarted.await(10, TimeUnit.SECONDS)
@@ -231,23 +238,19 @@ class DispatcherParallelismAdjustmentTest : SchedulerTestBase() {
 
             repeat(2) {
                 soft.dispatch(
-                    EmptyCoroutineContext,
-                    Runnable {
+                    EmptyCoroutineContext, Runnable {
                         queuedStarted.countDown()
                         releaseQueued.await()
-                    }
-                )
+                    })
             }
 
             assertEquals(
-                2,
-                soft.tryAdjustParallelism(2)
+                2, soft.tryAdjustParallelism(2)
             )
 
             assertTrue(
                 queuedStarted.await(2, TimeUnit.SECONDS),
-                "A +2 adjustment must start two queued workers. " +
-                    "Starting only one may leave a dependency cycle deadlocked."
+                "A +2 adjustment must start two queued workers. " + "Starting only one may leave a dependency cycle deadlocked."
             )
         } finally {
             releaseOriginal.countDown()
@@ -262,7 +265,9 @@ class DispatcherParallelismAdjustmentTest : SchedulerTestBase() {
         val executor = Executors.newFixedThreadPool(2)
         try {
             repeat(10_000 * stressTestMultiplierSqrt) {
-                assertEquals(1, soft.tryAdjustParallelism(1), "should always be able to grant a single unit of headroom")
+                assertEquals(
+                    1, soft.tryAdjustParallelism(1), "should always be able to grant a single unit of headroom"
+                )
 
                 val barrier = CyclicBarrier(2)
                 val futures = List(2) {
@@ -274,7 +279,8 @@ class DispatcherParallelismAdjustmentTest : SchedulerTestBase() {
                 val results = futures.map { it.get(10, TimeUnit.SECONDS) }
 
                 assertEquals(
-                    -1, results.sumOf { it.toInt() },
+                    -1,
+                    results.sumOf { it.toInt() },
                     "exactly one of the two concurrent reclaims should succeed since only one unit of headroom was granted, got $results"
                 )
             }

@@ -309,7 +309,9 @@ internal class CoroutineScheduler(
 
     private inline fun createdWorkers(state: Long): Int = (state and CREATED_MASK).toInt()
     private inline fun blockingTasks(state: Long): Int = (state and BLOCKING_MASK shr BLOCKING_SHIFT).toInt()
-    private inline fun availableCpuPermits(state: Long): Int = (state and CPU_PERMITS_MASK shr CPU_PERMITS_SHIFT).toInt()
+    private inline fun availableCpuPermits(state: Long): Int =
+        (state and CPU_PERMITS_MASK shr CPU_PERMITS_SHIFT).toInt()
+
     private inline fun cpuWorkers(state: Long): Int = (createdWorkers(state) - blockingTasks(state)).coerceAtLeast(0)
 
     // Guarded by synchronization
@@ -320,7 +322,7 @@ internal class CoroutineScheduler(
 
     private inline fun decrementBlockingTasks() {
         val oldState = controlState.getAndAdd(-(1L shl BLOCKING_SHIFT))
-        assert{ blockingTasks(oldState) > 0 }
+        assert { blockingTasks(oldState) > 0 }
     }
 
     private inline fun tryAcquireCpuPermit(): Boolean = controlState.loop { state ->
@@ -333,7 +335,7 @@ internal class CoroutineScheduler(
     private inline fun tryAcquireCpuPermitAndDecrementBlockingTasks(): Boolean = controlState.loop { state ->
         val available = availableCpuPermits(state)
         if (available == 0) return false
-        assert{ blockingTasks(state) > 0 } // Catch issues easier during tests
+        assert { blockingTasks(state) > 0 } // Catch issues easier during tests
         if (blockingTasks(state) == 0) return false // But avoid invalid states during runtime
         val update = state - (1L shl CPU_PERMITS_SHIFT) - (1L shl BLOCKING_SHIFT)
         if (controlState.compareAndSet(state, update)) return true
@@ -354,7 +356,7 @@ internal class CoroutineScheduler(
     private fun tryDecrementBlockingTaskIfNoCpuPermitAvailable(): Boolean {
         val state = controlState.value
         if (availableCpuPermits(state) > 0) return false
-        assert{ blockingTasks(state) > 0 } // Catch issues easier during tests
+        assert { blockingTasks(state) > 0 } // Catch issues easier during tests
         if (blockingTasks(state) == 0) return false // But avoid invalid states during runtime
         val updatedState = state - (1L shl BLOCKING_SHIFT)
         return controlState.compareAndSet(state, updatedState)
@@ -658,7 +660,8 @@ internal class CoroutineScheduler(
         if (isTerminated) return false
 
         if (outstandingCpuCompensations >= MAX_OUTSTANDING_CPU_COMPENSATIONS ||
-            outstandingCpuCompensations >= maxPoolSize - corePoolSize) {
+            outstandingCpuCompensations >= maxPoolSize - corePoolSize
+        ) {
             return false
         }
 
@@ -701,7 +704,7 @@ internal class CoroutineScheduler(
         // Blocking tasks cannot go below 0: CPU parallelism can decrease only when there
         // is an outstanding CPU compensation, so for every blocking task decrement there is
         // a matching incrementBlockingTasks() call done in [tryIncreaseCpuParallelism].
-        while(true) {
+        while (true) {
             // The loop to ensure that:
             // a) blocking tasks are decremented either with acquiring cpu permit or when there is no cpu permits
             // b) blocking tasks can not go below 0
@@ -853,6 +856,7 @@ internal class CoroutineScheduler(
             if (decompensationRequests == 0) {
                 return false
             }
+
             assert { state == WorkerState.CPU_ACQUIRED }
             while (decompensationRequests > 0) {
                 if (!cpuDecompensationRequests.compareAndSet(decompensationRequests, decompensationRequests - 1)) {
