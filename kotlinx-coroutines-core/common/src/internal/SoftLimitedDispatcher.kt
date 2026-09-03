@@ -55,7 +55,10 @@ internal fun CoroutineDispatcher.tryAdjustParallelism(parallelismDelta: Int): In
  * dispatcher that mostly behaves as limited, but can temporarily increase parallelism if necessary.
  */
 internal class SoftLimitedDispatcher(
-    private val dispatcher: CoroutineDispatcher, parallelism: Int, private val name: String?
+    private val dispatcher: CoroutineDispatcher,
+    parallelism: Int,
+    private val name: String?,
+    private val hardParallelism: Int = Int.MAX_VALUE
 ) : CoroutineDispatcher(), Delay by (dispatcher as? Delay ?: DefaultDelay), SoftLimitedParallelism {
     private val initialParallelism = parallelism
     private var additionalSoftParallelism = 0
@@ -75,7 +78,7 @@ internal class SoftLimitedDispatcher(
     override fun softLimitedParallelism(parallelism: Int, name: String?): CoroutineDispatcher {
         parallelism.checkParallelism()
         if (parallelism >= initialParallelism) return namedOrThis(name)
-        return SoftLimitedDispatcher(this, parallelism, name)
+        return SoftLimitedDispatcher(this, parallelism, name, hardParallelism)
     }
 
     override fun tryAdjustParallelism(parallelismDelta: Int): Int = synchronized(adjustmentLock) {
@@ -83,7 +86,7 @@ internal class SoftLimitedDispatcher(
         val targetTotalParallelism =
             (initialParallelism.toLong() + additionalSoftParallelism + parallelismDelta).coerceIn(
                     initialParallelism.toLong(),
-                    Int.MAX_VALUE.toLong()
+                    hardParallelism.toLong()
                 )
         val actualDelta = (targetTotalParallelism - initialParallelism - additionalSoftParallelism).toInt()
         if (actualDelta == 0) {

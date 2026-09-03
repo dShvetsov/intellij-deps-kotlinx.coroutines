@@ -173,7 +173,10 @@ internal open class SchedulerCoroutineDispatcher(
     override fun softLimitedParallelism(parallelism: Int, name: String?): CoroutineDispatcher {
         parallelism.checkParallelism()
         if (parallelism >= corePoolSize) return namedOrThis(name)
-        return SoftLimitedDispatcher(this, parallelism, name)
+        // to prevent problems with situations like Default.softLimitedParallelism(1).tryAdjustParallelism(100)
+        // we forbid adjusting nested soft limited parallelism of non-blocking (Default-like) dispatchers
+        // above the original `corePoolSize`
+        return SoftLimitedDispatcher(this, parallelism, name, hardParallelism = corePoolSize)
     }
 
     override fun tryAdjustParallelism(parallelismDelta: Int): Int {

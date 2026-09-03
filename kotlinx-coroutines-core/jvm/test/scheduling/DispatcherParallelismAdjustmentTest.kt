@@ -1,5 +1,6 @@
 package kotlinx.coroutines.scheduling
 
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.internal.*
 import kotlinx.coroutines.testing.*
 import org.junit.Test
@@ -10,9 +11,17 @@ import kotlin.test.*
 /**
  * Exercises `CoroutineDispatcher.tryAdjustParallelism(+1)` / `(-1)` at the dispatcher level (as opposed to
  * [CpuParallelismControlTest], which drives [CoroutineScheduler]'s increase/decrease methods directly), for
- * both flavors of dispatcher that implement [SoftLimitedParallelism]:
+ * dispatchers that implement [SoftLimitedParallelism]:
  *  - a plain [SchedulerCoroutineDispatcher] (what backs `Dispatchers.Default`)
- *  - a [SoftLimitedDispatcher] view on top of it (what backs `Dispatchers.IO`)
+ *  - a [SoftLimitedDispatcher] view on top of it, obtained through
+ *    [SchedulerCoroutineDispatcher.softLimitedParallelism] (via the `softBlockingDispatcher` helper below).
+ *    Despite the name, this view still dispatches through the plain CPU context -- see
+ *    `SchedulerTestBase.softBlocking` -- so its `hardParallelism` is capped at `corePoolSize`
+ *    ([testSchedulerBackedSoftDispatcherAdjustParallelismCannotExceedCorePoolSize]); it is *not*
+ *    representative of the real `Dispatchers.IO`.
+ *  - the genuinely unbounded [SoftLimitedDispatcher] shape that `UnlimitedIoScheduler` uses to back the
+ *    real `Dispatchers.IO`, exercised directly in
+ *    [testUnlimitedSoftDispatcherAsUsedByDispatchersIoActuallyRunsExtraTaskBeyondCorePoolSize].
  */
 class DispatcherParallelismAdjustmentTest : SchedulerTestBase() {
 
@@ -125,7 +134,7 @@ class DispatcherParallelismAdjustmentTest : SchedulerTestBase() {
     }
 
     @Test
-    fun testIoLikeDispatcherAdjustParallelismByOneLetsExtraTaskRunConcurrently() {
+    fun testSchedulerBackedSoftDispatcherAdjustParallelismByOneLetsExtraTaskRunConcurrently() {
         val parallelism = 2
         val soft = softBlockingDispatcher(parallelism)
 
@@ -154,7 +163,7 @@ class DispatcherParallelismAdjustmentTest : SchedulerTestBase() {
     }
 
     @Test
-    fun testIoLikeDispatcherAdjustParallelismByMinusOneCannotShrinkBelowInitialParallelism() {
+    fun testSchedulerBackedSoftDispatcherAdjustParallelismByMinusOneCannotShrinkBelowInitialParallelism() {
         val parallelism = 2
         val soft = softBlockingDispatcher(parallelism)
 
@@ -180,7 +189,99 @@ class DispatcherParallelismAdjustmentTest : SchedulerTestBase() {
     }
 
     @Test
-    fun testIoLikeDispatcherAdjustParallelismByOneStartsAlreadyQueuedWork() {
+    fun testSchedulerBackedSoftDispatcherAdjustParallelismCannotExceedCorePoolSize() {
+        corePoolSize = 3
+        maxPoolSize = 64
+        // `softBlockingDispatcher` delegates straight to `SchedulerCoroutineDispatcher.softLimitedParallelism`
+        // (see `SchedulerTestBase.softBlocking`), so the dispatcher under test here dispatches through the
+        // plain CPU context. That is exactly the path that now receives `hardParallelism = corePoolSize`
+        // (Dispatcher.kt), since the underlying scheduler cannot usefully run more concurrent CPU-context
+        // workers than that on its own. It is unrelated to the genuinely unbounded path that backs the
+        // real `Dispatchers.IO` -- see [testUnlimitedSoftDispatcherAsUsedByDispatchersIoActuallyRunsExtraTaskBeyondCorePoolSize].
+        val soft = softBlockingDispatcher(1)
+
+        assertEquals(
+            corePoolSize - 1,
+            soft.tryAdjustParallelism(10),
+            "the requested increase should be truncated at corePoolSize rather than granted in full"
+        )
+        assertEquals(
+            0, soft.tryAdjustParallelism(1), "no further headroom should be grantable once at the hard cap"
+        )
+        assertEquals(
+            -(corePoolSize - 1),
+            soft.tryAdjustParallelism(-10),
+            "reclaiming should only undo what was actually granted, not the originally requested amount"
+        )
+    }
+
+    @Test
+    fun testNestedSchedulerBackedSoftDispatcherInheritsHardParallelismCap() {
+        corePoolSize = 3
+        maxPoolSize = 64
+        val soft = softBlockingDispatcher(2)
+        // A soft view on top of another soft view must still be bounded by the same hard cap as its
+        // parent -- it must not be able to grow the total parallelism past corePoolSize just because
+        // it is one level removed from the SchedulerCoroutineDispatcher.
+        val nested = soft.softLimitedParallelism(1, null)
+
+        assertEquals(
+            corePoolSize - 1,
+            nested.tryAdjustParallelism(10),
+            "the nested view should inherit its parent's hard cap instead of growing unbounded"
+        )
+        assertEquals(
+            0, nested.tryAdjustParallelism(1), "no further headroom should be grantable once at the inherited cap"
+        )
+    }
+
+    @Test
+    fun testUnlimitedSoftDispatcherAsUsedByDispatchersIoActuallyRunsExtraTaskBeyondCorePoolSize() {
+        corePoolSize = 1
+        maxPoolSize = 64
+        // Mirrors how `UnlimitedIoScheduler.softLimitedParallelism` builds the dispatcher that really
+        // backs `Dispatchers.IO`: the backing dispatcher runs tasks under `BlockingContext` -- so the
+        // scheduler compensates with extra worker threads instead of being limited to corePoolSize CPU
+        // permits -- and no `hardParallelism` is passed, so growth is unbounded. This is deliberately
+        // *not* built via `softBlockingDispatcher`/`SchedulerTestBase.softBlocking`, since that helper's
+        // `softLimitedParallelism` override forwards to the plain CPU-context
+        // `SchedulerCoroutineDispatcher` (see the tests above) rather than wrapping a `BlockingContext`
+        // dispatcher, so it would not actually demonstrate growth beyond corePoolSize.
+        val scheduler = dispatcher as SchedulerCoroutineDispatcher
+        val blockingBacking = object : CoroutineDispatcher() {
+            override fun dispatch(context: CoroutineContext, block: Runnable) {
+                scheduler.dispatchWithContext(block, BlockingContext, false)
+            }
+        }
+        val soft = SoftLimitedDispatcher(blockingBacking, 1, null)
+
+        val started = CountDownLatch(1)
+        val release = CountDownLatch(1)
+        try {
+            soft.dispatch(EmptyCoroutineContext, Runnable {
+                started.countDown()
+                release.await()
+            })
+            assertTrue(started.await(10, TimeUnit.SECONDS))
+
+            // corePoolSize is 1, so the only way a second, concurrently-running task can start is if the
+            // soft view can actually grow past corePoolSize -- which it must here, since it has no hard
+            // cap and its blocking-context backing lets the scheduler start an extra worker thread.
+            assertEquals(1, soft.tryAdjustParallelism(1), "a single unit of headroom should be granted in full")
+            val extraStarted = CountDownLatch(1)
+            soft.dispatch(EmptyCoroutineContext, Runnable { extraStarted.countDown() })
+            assertTrue(
+                extraStarted.await(10, TimeUnit.SECONDS),
+                "an IO-like (blocking-context, unbounded) soft view must actually be able to run more " +
+                    "concurrent tasks than corePoolSize, unlike a soft view backed by the plain CPU context"
+            )
+        } finally {
+            release.countDown()
+        }
+    }
+
+    @Test
+    fun testSchedulerBackedSoftDispatcherAdjustParallelismByOneStartsAlreadyQueuedWork() {
         val parallelism = 1
         val soft = softBlockingDispatcher(parallelism)
 
@@ -259,7 +360,7 @@ class DispatcherParallelismAdjustmentTest : SchedulerTestBase() {
     }
 
     @Test
-    fun testIoLikeDispatcherConcurrentAdjustParallelismNeverOverdraftsHeadroom() {
+    fun testSchedulerBackedSoftDispatcherConcurrentAdjustParallelismNeverOverdraftsHeadroom() {
         val parallelism = 2
         val soft = softBlockingDispatcher(parallelism)
         val executor = Executors.newFixedThreadPool(2)
