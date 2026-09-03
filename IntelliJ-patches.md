@@ -54,13 +54,24 @@ We provide a user-visible function for parallelism compensation for arbitrary bl
 
 ### Parallelism adjustment
 
-In addition to the compensation mechanism triggered automatically by `runBlockingWithParallelismCompensation`, it is
-sometimes necessary for a caller to directly adjust the parallelism limit of a dispatcher, for example, when pool is
-starved, it can be detected by external thread or coroutine, and it can temporarily increase parallelism limit.
+In addition to the automatic compensation performed by `runBlockingWithParallelismCompensation`, a caller may need
+to adjust a dispatcher's parallelism limit of a dispatcher directly. For example, starvation detected by
+an external thread or coroutine may be mitigated by temporarily increasing the parallelism limit.
+
+`tryAdjustParallelism` is a best-effort operation. It attempts to shift the
+effective parallelism limit by `parallelismDelta` - positive to increase it and
+negative to decrease it. The requested adjustment may be applied partially or
+not at all. The function returns the delta that was actually applied. The function is performed
+on a `Dispatcher` and may be called from any thread, in contrast with
+`runBlockingWithParallelismCompensation` compensation mechanism that derives associated
+Dispatchers chain based on the current thread.
 
 `tryAdjustParallelism` is a best-effort operation: it attempts to shift the effective parallelism limit by
 `parallelismDelta` (positive to increase, negative to decrease), but the actual adjustment applied may be less than
 requested, or zero. The function returns the actual delta that was applied.
+
+It is important to note that `tryAdjustParallelism` is designed to be invoked externally in contrast with `runBlockingWithParallelismCompensation`
+that is based on the current thread and the associated `Disaptcher`.
 
 **Constraints for `Default` dispatcher:**
 - The parallelism limit cannot be decreased below the dispatcher's initial `corePoolSize`.
