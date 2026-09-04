@@ -84,10 +84,8 @@ internal class SoftLimitedDispatcher(
     override fun tryAdjustParallelism(parallelismDelta: Int): Int = synchronized(adjustmentLock) {
         // totalParallelism doesn't detect if parallelism was compensated for a specific thread
         val targetTotalParallelism =
-            (initialParallelism.toLong() + additionalSoftParallelism + parallelismDelta).coerceIn(
-                    initialParallelism.toLong(),
-                    hardParallelism.toLong()
-                )
+            (initialParallelism.toLong() + additionalSoftParallelism + parallelismDelta)
+                .coerceIn(initialParallelism.toLong(), hardParallelism.toLong())
         val actualDelta = (targetTotalParallelism - initialParallelism - additionalSoftParallelism).toInt()
         if (actualDelta == 0) {
             return 0
