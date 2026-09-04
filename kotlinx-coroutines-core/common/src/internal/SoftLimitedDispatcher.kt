@@ -44,7 +44,6 @@ internal fun CoroutineDispatcher.tryAdjustParallelism(parallelismDelta: Int): In
     }
     throw UnsupportedOperationException("CoroutineDispatcher.tryAdjustParallelism cannot be applied to $this")
 }
-
 /**
  * Introduced as part of IntelliJ patches.
  *
@@ -62,7 +61,6 @@ internal class SoftLimitedDispatcher(
 ) : CoroutineDispatcher(), Delay by (dispatcher as? Delay ?: DefaultDelay), SoftLimitedParallelism {
     private val initialParallelism = parallelism
     private var additionalSoftParallelism = 0
-
     // `parallelism limit - runningWorkers`; may be < 0 if decompensation is expected
     private val availablePermits = atomic(parallelism)
 
@@ -155,7 +153,6 @@ internal class SoftLimitedDispatcher(
                     if (queue.size == 0) return null
                     availablePermits.decrementAndGet()
                 }
-
                 else -> return nextTask
             }
         }
